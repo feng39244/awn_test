@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 from passlib.context import CryptContext
 import jwt
 from pydantic import EmailStr
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # Load environment variables
 load_dotenv()
@@ -53,6 +55,9 @@ class TokenData(SQLModel):
 
 # Define the app
 app = FastAPI(title="User Authentication API")
+# Mount the static directory
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 # Create tables
 def create_tables():
@@ -156,4 +161,4 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the User Authentication API. Visit /docs for documentation."}
+   return FileResponse("static/index.html")
