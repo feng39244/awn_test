@@ -181,3 +181,6 @@ For production deployment, make sure to:
 
 ## Local testing
 uvicorn main:app --reload
+
+## Cloud testing
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
