@@ -21,6 +21,10 @@ class User(SQLModel, table=True):
     role: str = "user"
     last_login_time: Optional[datetime] = None
 
+class Token(SQLModel):
+    access_token: str
+    token_type: str
+
 def create_tables():
     """Create all database tables"""
     SQLModel.metadata.create_all(engine)

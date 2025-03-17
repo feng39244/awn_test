@@ -2,6 +2,7 @@ from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List, ForwardRef
 from datetime import date, datetime
 from pydantic import EmailStr, validator
+from typing import Optional
 
 # Define the schema models, separated from database models
 class UserCreate(SQLModel):
@@ -9,21 +10,17 @@ class UserCreate(SQLModel):
     password: str
     role: str = "user"
 
-class Token(SQLModel):
-    access_token: str
-    token_type: str
 
-# Define base model for shared fields
-class TimeStampMixin(SQLModel):
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
 
-# Define all models
+class TimeStampMixin:
+    created_at: Optional[datetime] = Field(default=None)
+    updated_at: Optional[datetime] = Field(default=None)
+
 class Patient(SQLModel, TimeStampMixin, table=True):
     __tablename__ = "patients"
     
     patient_id: Optional[int] = Field(default=None, primary_key=True)
-    first_name: str
+    first_name: str = Field(...)
     middle_name: Optional[str] = None
     last_name: str
     date_of_birth: date
@@ -38,7 +35,12 @@ class Patient(SQLModel, TimeStampMixin, table=True):
     # Relationships
     insurances: List["PatientInsurance"] = Relationship(back_populates="patient")
     claims: List["Claim"] = Relationship(back_populates="patient")
-
+    def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            if self.created_at is None:
+                self.created_at = datetime.now()
+            if self.updated_at is None:
+                self.updated_at = datetime.now()
 
 class InsuranceCompany(SQLModel, TimeStampMixin, table=True):
     __tablename__ = "insurance_companies"
