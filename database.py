@@ -11,7 +11,7 @@ load_dotenv()
 DB_PASSWORD = os.getenv("DB_PASSWORD", "xxx")
 
 # Database connection
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:{DB_PASSWORD}@localhost:5432/userdb")
+DATABASE_URL = os.getenv("DATABASE_URL", f"postgresql://postgres:{DB_PASSWORD}@localhost:5432/userdb")
 engine = create_engine(DATABASE_URL)
 
 # Define the User model - moved from main.py
