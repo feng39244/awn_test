@@ -5,7 +5,7 @@ from models import (
     Patient, InsuranceCompany, PatientInsurance, Provider,
     DiagnosisCode, ProcedureCode, Claim, ClaimDiagnosis, ServiceLine
 )
-
+from sqlmodel import Session, SQLModel, select
 def insert_sample_data():
     """Insert sample data into all tables"""
     with Session(engine) as session:
@@ -154,4 +154,13 @@ def insert_sample_data():
         # Final commit
         session.commit()
         
-        print("Sample data inserted successfully!")
+if __name__ == "__main__":
+    # Create tables if they don't exist
+    SQLModel.metadata.create_all(engine)
+    # Insert sample data
+    insert_sample_data()
+    print("Sample Data inserted!")
+    with Session(engine) as session:
+        patients = session.exec(select(Patient)).all()
+        for patient in patients:
+            print(patient.first_name, patient.last_name)

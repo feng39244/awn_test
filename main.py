@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,10 +17,13 @@ from models import (
     UserCreate
 )
 from seed import insert_sample_data
-
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse
 # Create FastAPI app
 app = FastAPI(title="CMS-1500 Billing System")
 
+# Set up templates directory
+templates = Jinja2Templates(directory="templates")
 # Mount the static directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -50,6 +53,23 @@ def create_patient(patient: PatientCreate, db: Session = Depends(get_db)):
 def read_patients(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     patients = db.exec(select(Patient).offset(skip).limit(limit)).all()
     return patients
+
+@app.get("/patients/", response_class=HTMLResponse)
+def read_patients(
+    request: Request,
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db)
+):
+    patients = db.exec(select(Patient).offset(skip).limit(limit)).all()
+    
+    return templates.TemplateResponse(
+        "all-patients.html",
+        {
+            "request": request,  # Required by Jinja2Templates
+            "patients": patients 
+        }
+    )
 
 @app.get("/patients/{patient_id}", response_model=Patient)
 def read_patient(patient_id: int, db: Session = Depends(get_db)):
