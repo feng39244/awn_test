@@ -1,0 +1,68 @@
+/* Custom styles for Patient Billing System */
+
+/* Badge styles */
+.badge-ready {
+  background-color: #198754;
+  color: white;
+}
+
+.badge-progress {
+  background-color: #6c757d;
+  color: white;
+}
+
+/* Animation for sync icon */
+.rotate {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Language switch styling */
+.language-switch {
+  display: flex;
+  align-items: center;
+  margin-left: 15px;
+}
+
+.form-check-input:checked {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+/* Card styling */
+.card {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Dashboard stats cards */
+.card-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Table styling enhancements */
+.table-hover tbody tr:hover {
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .language-switch {
+    margin-top: 10px;
+    margin-left: 0;
+  }
+}
+
