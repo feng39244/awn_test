@@ -158,7 +158,6 @@ async def read_welcome(current_user: User = Depends(get_current_user)):
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
-# Serve static index.html at root
-@app.get("/")
-async def root():
-    return FileResponse("static/index.html")
+@app.get("/", response_class=HTMLResponse)
+async def read_index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
