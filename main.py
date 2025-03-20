@@ -161,3 +161,53 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+# Ready to Bill route
+@app.get("/ready-to-bill/", response_class=HTMLResponse)
+async def read_ready_to_bill(request: Request, db: Session = Depends(get_db)):
+    # Placeholder: Filter patients (e.g., IDs < 1000)
+    patients = db.exec(select(Patient).where(Patient.patient_id < 1000)).all()
+    return templates.TemplateResponse(
+        "patient_list.html",
+        {"request": request, "patients": patients, "status_filter": "ready-to-bill"}
+    )
+
+# Ready to Schedule route
+@app.get("/ready-to-schedule/", response_class=HTMLResponse)
+async def read_ready_to_schedule(request: Request, db: Session = Depends(get_db)):
+    # Placeholder: Filter patients (e.g., IDs between 1000 and 2000)
+    patients = db.exec(select(Patient).where(Patient.patient_id.between(1000, 2000))).all()
+    return templates.TemplateResponse(
+        "patient_list.html",
+        {"request": request, "patients": patients, "status_filter": "ready-to-schedule"}
+    )
+
+# Ready to Confirm route
+@app.get("/ready-to-confirm/", response_class=HTMLResponse)
+async def read_ready_to_confirm(request: Request, db: Session = Depends(get_db)):
+    # Placeholder: Filter patients (e.g., IDs between 2000 and 3000)
+    patients = db.exec(select(Patient).where(Patient.patient_id.between(2000, 3000))).all()
+    return templates.TemplateResponse(
+        "patient_list.html",
+        {"request": request, "patients": patients, "status_filter": "ready-to-confirm"}
+    )
+
+# Ready to Report route
+@app.get("/ready-to-report/", response_class=HTMLResponse)
+async def read_ready_to_report(request: Request, db: Session = Depends(get_db)):
+    # Placeholder: Filter patients (e.g., IDs between 3000 and 4000)
+    patients = db.exec(select(Patient).where(Patient.patient_id.between(3000, 4000))).all()
+    return templates.TemplateResponse(
+        "patient_list.html",
+        {"request": request, "patients": patients, "status_filter": "ready-to-report"}
+    )
+
+# Ready to View route
+@app.get("/ready-to-view/", response_class=HTMLResponse)
+async def read_ready_to_view(request: Request, db: Session = Depends(get_db)):
+    # Placeholder: Filter patients (e.g., IDs > 4000)
+    patients = db.exec(select(Patient).where(Patient.patient_id > 4000)).all()
+    return templates.TemplateResponse(
+        "patient_list.html",
+        {"request": request, "patients": patients, "status_filter": "ready-to-view"}
+    )

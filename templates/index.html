@@ -106,19 +106,19 @@
     <div class="card-header">
         <ul class="nav nav-tabs card-header-tabs">
             <li class="nav-item">
-                <a class="nav-link active" href="#" data-i18n="tabReadyToBill">Ready to Bill</a>
+                <a class="nav-link{% if request.path == '/ready-to-bill/' %} active{% endif %}" href="/ready-to-bill/" data-i18n="tabReadyToBill">Ready to Bill</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#" data-i18n="tabReadyToSchedule">Ready to Schedule</a>
+                <a class="nav-link{% if request.path == '/ready-to-schedule/' %} active{% endif %}" href="/ready-to-schedule/" data-i18n="tabReadyToSchedule">Ready to Schedule</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#" data-i18n="tabReadyToConfirm">Ready to Confirm</a>
+                <a class="nav-link{% if request.path == '/ready-to-confirm/' %} active{% endif %}" href="/ready-to-confirm/" data-i18n="tabReadyToConfirm">Ready to Confirm</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#" data-i18n="tabReadyToReport">Ready to Report</a>
+                <a class="nav-link{% if request.path == '/ready-to-report/' %} active{% endif %}" href="/ready-to-report/" data-i18n="tabReadyToReport">Ready to Report</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" href="#" data-i18n="tabReadyToView">Ready to View</a>
+                <a class="nav-link{% if request.path == '/ready-to-view/' %} active{% endif %}" href="/ready-to-view/" data-i18n="tabReadyToView">Ready to View</a>
             </li>
         </ul>
     </div>

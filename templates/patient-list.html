@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Patient Billing System - {{ status_filter|title }}{% endblock %}
+
+{% block page_title %}
+<span data-i18n="tab{{ status_filter|replace('-', '')|title }}">{{ status_filter|title }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <ul class="nav nav-tabs card-header-tabs">
+            <li class="nav-item">
+                <a class="nav-link{% if request.path == '/ready-to-bill/' %} active{% endif %}" href="/ready-to-bill/" data-i18n="tabReadyToBill">Ready to Bill</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link{% if request.path == '/ready-to-schedule/' %} active{% endif %}" href="/ready-to-schedule/" data-i18n="tabReadyToSchedule">Ready to Schedule</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link{% if request.path == '/ready-to-confirm/' %} active{% endif %}" href="/ready-to-confirm/" data-i18n="tabReadyToConfirm">Ready to Confirm</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link{% if request.path == '/ready-to-report/' %} active{% endif %}" href="/ready-to-report/" data-i18n="tabReadyToReport">Ready to Report</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link{% if request.path == '/ready-to-view/' %} active{% endif %}" href="/ready-to-view/" data-i18n="tabReadyToView">Ready to View</a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th data-i18n="tablePatientId">Patient ID</th>
+                        <th data-i18n="tablePatientName">Patient Name</th>
+                        <th data-i18n="tableInsurance">Insurance</th>
+                        <th data-i18n="tablePhone">Phone</th>
+                        <th class="text-end" data-i18n="tableActions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for patient in patients %}
+                    <tr>
+                        <td>{{ patient.patient_id }}</td>
+                        <td class="fw-bold">
+                            {{ patient.first_name }}
+                            {% if patient.middle_name %} {{ patient.middle_name }} {% endif %}
+                            {{ patient.last_name }}
+                        </td>
+                        <td>
+                            {% if patient.insurances and patient.insurances|length > 0 %}
+                                {{ patient.insurances[0].insurance_name or "N/A" }}
+                            {% else %}
+                                None
+                            {% endif %}
+                        </td>
+                        <td>{{ patient.phone or "N/A" }}</td>
+                        <td class="text-end">
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-i18n="btnActions">Actions</button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item" href="/patients/{{ patient.patient_id }}"><i class="bi bi-file-text me-2"></i> <span data-i18n="actionViewDetails">View Details</span></a></li>
+                                    <li><a class="dropdown-item" href="#"><i class="bi bi-calendar me-2"></i> <span data-i18n="actionViewAppointments">View Appointments</span></a></li>
+                                </ul>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not patients %}
+                    <tr>
+                        <td colspan="5" class="text-center">No patients found for this status.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
