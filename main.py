@@ -55,19 +55,20 @@ def create_patient(patient: PatientCreate, db: Session = Depends(get_db)):
 #     return patients
 
 @app.get("/patients/", response_class=HTMLResponse)
-def read_patients(
+async def read_patients(
     request: Request,
-    skip: int = 0, 
-    limit: int = 100, 
+    skip: int = 0,
+    limit: int = 100,
     db: Session = Depends(get_db)
 ):
     patients = db.exec(select(Patient).offset(skip).limit(limit)).all()
-    
     return templates.TemplateResponse(
         "all-patients.html",
         {
-            "request": request,  # Required by Jinja2Templates
-            "patients": patients 
+            "request": request,
+            "patients": patients,
+            "skip": skip,
+            "limit": limit
         }
     )
 

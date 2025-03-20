@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head> 
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Patient Billing System</title>
@@ -9,7 +9,7 @@
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <div class="container-fluid">
@@ -24,7 +24,7 @@
                     <div class="collapse navbar-collapse" id="navbarNav">
                         <ul class="navbar-nav">
                             <li class="nav-item">
-                                <a class="nav-link" href="index.html" data-i18n="navDashboard">Dashboard</a>
+                                <a class="nav-link" href="/index.html" data-i18n="navDashboard">Dashboard</a>
                             </li>
                             <li class="nav-item">
                                 <a class="nav-link" href="#" data-i18n="navReadyToBill">Ready to Bill</a>
@@ -33,7 +33,7 @@
                                 <a class="nav-link" href="#" data-i18n="navInProgress">In Progress</a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link activate" href="all-patients.html" data-i18n="navAllPatients">All Patients</a>
+                                <a class="nav-link active" href="/patients/" data-i18n="navAllPatients">All Patients</a>
                             </li>
                         </ul>
                         <div class="ms-auto d-flex align-items-center">
@@ -49,13 +49,12 @@
                 </div>
             </nav>
         </div>
-        
+
         <!-- Main Content -->
         <div class="container mt-4">
             <!-- Page Header -->
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1 data-i18n="allPatientsTitle">All Patients</h1>
-                <!-- Action Buttons -->
                 <div>
                     <button class="btn btn-primary">
                         <i class="bi bi-plus-circle me-2"></i> <span data-i18n="btnAddPatient">Add Patient</span>
@@ -65,10 +64,10 @@
                     </button>
                 </div>
             </div>
-            
+
             <!-- Alert Container -->
             <div id="alert-container"></div>
-            
+
             <!-- Filters and Search -->
             <div class="card mb-4">
                 <div class="card-body">
@@ -84,12 +83,12 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label for="statusFilter" class="form-label" data-i18n="filterStatus">Status</label>
-                            <select id="statusFilter" class="form-select">
-                                <option value="" data-i18n="filterAll">All</option>
-                                <option value="active" data-i18n="statusActive">Active</option>
-                                <option value="pending" data-i18n="statusPending">Pending</option>
-                                <option value="completed" data-i18n="statusCompleted">Completed</option>
+                            <label for="genderFilter" class="form-label">Gender</label>
+                            <select id="genderFilter" class="form-select">
+                                <option value="">All</option>
+                                <option value="M">Male</option>
+                                <option value="F">Female</option>
+                                <option value="Other">Other</option>
                             </select>
                         </div>
                         <div class="col-md-4">
@@ -104,7 +103,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <!-- Patient List -->
             <div class="card">
                 <div class="card-body">
@@ -116,28 +115,38 @@
                                     <th data-i18n="tablePatientName">Patient Name</th>
                                     <th data-i18n="tableInsurance">Insurance</th>
                                     <th data-i18n="tablePhone">Phone</th>
-                                    <th data-i18n="tableLastVisit">Last Visit</th>
-                                    <th data-i18n="tableNextVisit">Next Visit</th>
-                                    <th data-i18n="tableStatus">Status</th>
+                                    <th>Date of Birth</th>
+                                    <th>Joined Date</th>
                                     <th class="text-end" data-i18n="tableActions">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
+                                {% for patient in patients %}
                                 <tr>
-                                    <td>P-1001</td>
-                                    <td class="fw-bold">John Smith</td>
-                                    <td>Blue Cross</td>
-                                    <td>(555) 123-4567</td>
-                                    <td>2023-05-15</td>
-                                    <td>2023-06-15</td>
-                                    <td><span class="badge bg-success" data-i18n="statusActive">Active</span></td>
+                                    <td>{{ patient.patient_id }}</td>
+                                    <td class="fw-bold">
+                                        {{ patient.first_name }}
+                                        {% if patient.middle_name %} {{ patient.middle_name }} {% endif %}
+                                        {{ patient.last_name }}
+                                    </td>
+                                    <td>
+                                        {% if patient.insurances and patient.insurances|length > 0 %}
+                                            {{ patient.insurances[0].insurance_name or "N/A" }}
+                                            {% if patient.insurances|length > 1 %} (+{{ patient.insurances|length - 1 }} more) {% endif %}
+                                        {% else %}
+                                            None
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ patient.phone or "N/A" }}</td>
+                                    <td>{{ patient.date_of_birth }}</td>
+                                    <td>{{ patient.created_at.date() }}</td>
                                     <td class="text-end">
                                         <div class="dropdown">
                                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-i18n="btnActions">
                                                 Actions
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-end">
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-file-text me-2"></i> <span data-i18n="actionViewDetails">View Details</span></a></li>
+                                                <li><a class="dropdown-item" href="/patients/{{ patient.patient_id }}"><i class="bi bi-file-text me-2"></i> <span data-i18n="actionViewDetails">View Details</span></a></li>
                                                 <li><a class="dropdown-item" href="#"><i class="bi bi-calendar me-2"></i> <span data-i18n="actionViewAppointments">View Appointments</span></a></li>
                                                 <li><a class="dropdown-item" href="#"><i class="bi bi-pencil me-2"></i> <span data-i18n="actionEdit">Edit</span></a></li>
                                                 <li><hr class="dropdown-divider"></li>
@@ -146,155 +155,57 @@
                                         </div>
                                     </td>
                                 </tr>
+                                {% endfor %}
+                                {% if not patients %}
                                 <tr>
-                                    <td>P-1002</td>
-                                    <td class="fw-bold">Maria Garcia</td>
-                                    <td>Aetna</td>
-                                    <td>(555) 234-5678</td>
-                                    <td>2023-05-20</td>
-                                    <td>2023-06-20</td>
-                                    <td><span class="badge bg-success" data-i18n="statusActive">Active</span></td>
-                                    <td class="text-end">
-                                        <div class="dropdown">
-                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-i18n="btnActions">
-                                                Actions
-                                            </button>
-                                            <ul class="dropdown-menu dropdown-menu-end">
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-file-text me-2"></i> <span data-i18n="actionViewDetails">View Details</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-calendar me-2"></i> <span data-i18n="actionViewAppointments">View Appointments</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-pencil me-2"></i> <span data-i18n="actionEdit">Edit</span></a></li>
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li><a class="dropdown-item text-danger" href="#"><i class="bi bi-archive me-2"></i> <span data-i18n="actionArchive">Archive</span></a></li>
-                                            </ul>
-                                        </div>
-                                    </td>
+                                    <td colspan="7" class="text-center">No patients found.</td>
                                 </tr>
-                                <tr>
-                                    <td>P-1003</td>
-                                    <td class="fw-bold">Robert Johnson</td>
-                                    <td>UnitedHealthcare</td>
-                                    <td>(555) 345-6789</td>
-                                    <td>2023-05-25</td>
-                                    <td>2023-06-25</td>
-                                    <td><span class="badge bg-success" data-i18n="statusActive">Active</span></td>
-                                    <td class="text-end">
-                                        <div class="dropdown">
-                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-i18n="btnActions">
-                                                Actions
-                                            </button>
-                                            <ul class="dropdown-menu dropdown-menu-end">
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-file-text me-2"></i> <span data-i18n="actionViewDetails">View Details</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-calendar me-2"></i> <span data-i18n="actionViewAppointments">View Appointments</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-pencil me-2"></i> <span data-i18n="actionEdit">Edit</span></a></li>
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li><a class="dropdown-item text-danger" href="#"><i class="bi bi-archive me-2"></i> <span data-i18n="actionArchive">Archive</span></a></li>
-                                            </ul>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td>P-1004</td>
-                                    <td class="fw-bold">Sarah Williams</td>
-                                    <td>Cigna</td>
-                                    <td>(555) 456-7890</td>
-                                    <td>2023-05-30</td>
-                                    <td>2023-06-30</td>
-                                    <td><span class="badge bg-success" data-i18n="statusActive">Active</span></td>
-                                    <td class="text-end">
-                                        <div class="dropdown">
-                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-i18n="btnActions">
-                                                Actions
-                                            </button>
-                                            <ul class="dropdown-menu dropdown-menu-end">
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-file-text me-2"></i> <span data-i18n="actionViewDetails">View Details</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-calendar me-2"></i> <span data-i18n="actionViewAppointments">View Appointments</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-pencil me-2"></i> <span data-i18n="actionEdit">Edit</span></a></li>
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li><a class="dropdown-item text-danger" href="#"><i class="bi bi-archive me-2"></i> <span data-i18n="actionArchive">Archive</span></a></li>
-                                            </ul>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td>P-1005</td>
-                                    <td class="fw-bold">Michael Brown</td>
-                                    <td>Blue Cross</td>
-                                    <td>(555) 567-8901</td>
-                                    <td>2023-06-05</td>
-                                    <td>2023-07-05</td>
-                                    <td><span class="badge bg-warning text-dark" data-i18n="statusPending">Pending</span></td>
-                                    <td class="text-end">
-                                        <div class="dropdown">
-                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-i18n="btnActions">
-                                                Actions
-                                            </button>
-                                            <ul class="dropdown-menu dropdown-menu-end">
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-file-text me-2"></i> <span data-i18n="actionViewDetails">View Details</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-calendar me-2"></i> <span data-i18n="actionViewAppointments">View Appointments</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-pencil me-2"></i> <span data-i18n="actionEdit">Edit</span></a></li>
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li><a class="dropdown-item text-danger" href="#"><i class="bi bi-archive me-2"></i> <span data-i18n="actionArchive">Archive</span></a></li>
-                                            </ul>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td>P-1006</td>
-                                    <td class="fw-bold">Jennifer Davis</td>
-                                    <td>Aetna</td>
-                                    <td>(555) 678-9012</td>
-                                    <td>2023-06-10</td>
-                                    <td>2023-07-10</td>
-                                    <td><span class="badge bg-secondary" data-i18n="statusCompleted">Completed</span></td>
-                                    <td class="text-end">
-                                        <div class="dropdown">
-                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-i18n="btnActions">
-                                                Actions
-                                            </button>
-                                            <ul class="dropdown-menu dropdown-menu-end">
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-file-text me-2"></i> <span data-i18n="actionViewDetails">View Details</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-calendar me-2"></i> <span data-i18n="actionViewAppointments">View Appointments</span></a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="bi bi-pencil me-2"></i> <span data-i18n="actionEdit">Edit</span></a></li>
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li><a class="dropdown-item text-danger" href="#"><i class="bi bi-archive me-2"></i> <span data-i18n="actionArchive">Archive</span></a></li>
-                                            </ul>
-                                        </div>
-                                    </td>
-                                </tr>
+                                {% endif %}
                             </tbody>
                         </table>
                     </div>
-                    
+
                     <!-- Pagination -->
                     <nav aria-label="Patient list pagination" class="mt-4">
                         <ul class="pagination justify-content-center">
+                            {% if skip > 0 %}
+                            <li class="page-item">
+                                <a class="page-link" href="/patients/?skip={{ skip - limit }}&limit={{ limit }}" data-i18n="paginationPrevious">Previous</a>
+                            </li>
+                            {% else %}
                             <li class="page-item disabled">
                                 <a class="page-link" href="#" tabindex="-1" aria-disabled="true" data-i18n="paginationPrevious">Previous</a>
                             </li>
-                            <li class="page-item active" aria-current="page">
-                                <a class="page-link" href="#">1</a>
+                            {% endif %}
+
+                            {% set current_page = (skip // limit) + 1 %}
+                            {% set total_pages = (patients | length) // limit + 1 if (patients | length) % limit else (patients | length) // limit %}
+                            {% for page in range(1, total_pages + 1) %}
+                            <li class="page-item {% if page == current_page %}active{% endif %}">
+                                <a class="page-link" href="/patients/?skip={{ (page - 1) * limit }}&limit={{ limit }}">{{ page }}</a>
                             </li>
+                            {% endfor %}
+
+                            {% if patients | length == limit %}
                             <li class="page-item">
-                                <a class="page-link" href="#">2</a>
+                                <a class="page-link" href="/patients/?skip={{ skip + limit }}&limit={{ limit }}" data-i18n="paginationNext">Next</a>
                             </li>
-                            <li class="page-item">
-                                <a class="page-link" href="#">3</a>
-                            </li>
-                            <li class="page-item">
+                            {% else %}
+                            <li class="page-item disabled">
                                 <a class="page-link" href="#" data-i18n="paginationNext">Next</a>
                             </li>
+                            {% endif %}
                         </ul>
                     </nav>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Custom JS -->
-    <script src="translations.js"></script>
-    <script src="app.js"></script>
+    <script src="/static/translations.js"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>
-
