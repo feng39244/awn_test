@@ -4,30 +4,12 @@
 
 {% block extra_styles %}
 <style>
-    .badge-ready {
-        background-color: #198754;
-        color: white;
-    }
-    .badge-progress {
-        background-color: #6c757d;
-        color: white;
-    }
-    .rotate {
-        animation: spin 1s linear infinite;
-    }
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    .language-switch {
-        display: flex;
-        align-items: center;
-        margin-left: 15px;
-    }
-    .form-check-input:checked {
-        background-color: #0d6efd;
-        border-color: #0d6efd;
-    }
+    .badge-ready { background-color: #198754; color: white; }
+    .badge-progress { background-color: #6c757d; color: white; }
+    .rotate { animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .language-switch { display: flex; align-items: center; margin-left: 15px; }
+    .form-check-input:checked { background-color: #0d6efd; border-color: #0d6efd; }
 </style>
 {% endblock %}
 
@@ -191,8 +173,6 @@
 
 {% block extra_scripts %}
 <script>
-    {{ include('translations.js') | safe }}
-    // Add your inline JS from index.html here if needed, or move to app.js
     function simulateSync(type) {
         const btnId = type === 'calendar' ? 'sync-calendar-btn' : 'sync-auth-btn';
         const iconId = type === 'calendar' ? 'sync-calendar-icon' : 'sync-auth-icon';
@@ -208,11 +188,13 @@
             syncIcon.classList.add('bi-calendar-check');
         }, 1500);
     }
+
     function markAsBilled(patientId) {
         const row = document.getElementById(`patient-row-${patientId}`);
         if (row) row.remove();
         showAlert('success', translations[currentLang].alertBilledSuccess);
     }
+
     function showAlert(type, message) {
         const alertContainer = document.getElementById('alert-container');
         const alert = document.createElement('div');
