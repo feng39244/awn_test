@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List, ForwardRef
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pydantic import EmailStr, validator
 from typing import Optional
 
@@ -31,10 +31,13 @@ class Patient(SQLModel, TimeStampMixin, table=True):
     zipcode: str
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
+    client_number: Optional[str] = None
     
     # Relationships
     insurances: List["PatientInsurance"] = Relationship(back_populates="patient")
     claims: List["Claim"] = Relationship(back_populates="patient")
+    appointments: List["Appointment"] = Relationship(back_populates="patient")
+    
     def __init__(self, **kwargs):
             super().__init__(**kwargs)
             if self.created_at is None:
@@ -108,6 +111,7 @@ class Provider(SQLModel, TimeStampMixin, table=True):
         back_populates="rendering_provider",
         sa_relationship_kwargs={"foreign_keys": "ServiceLine.rendering_provider_id"}
     )
+    appointments: List["Appointment"] = Relationship(back_populates="practitioner")
 
 
 class DiagnosisCode(SQLModel, TimeStampMixin, table=True):
@@ -199,6 +203,59 @@ class ServiceLine(SQLModel, TimeStampMixin, table=True):
     )
 
 
+class Location(SQLModel, TimeStampMixin, table=True):
+    __tablename__ = "locations"
+    
+    location_id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zipcode: Optional[str] = None
+    phone: Optional[str] = None
+    
+    # Relationships
+    appointments: List["Appointment"] = Relationship(back_populates="location")
+
+
+class Appointment(SQLModel, TimeStampMixin, table=True):
+    __tablename__ = "appointments"
+    
+    appointment_id: Optional[int] = Field(default=None, primary_key=True)
+    patient_id: int = Field(foreign_key="patients.patient_id")
+    practitioner_id: int = Field(foreign_key="providers.provider_id")
+    location_id: int = Field(foreign_key="locations.location_id")
+    
+    # Appointment time details
+    appointment_datetime: datetime
+    end_time: time
+    
+    # Appointment metadata
+    appointment_type: str
+    appointment_subtype: Optional[str] = None
+    invoice_number: Optional[str] = None
+    notes: Optional[str] = None
+    flag: Optional[str] = None
+    status: str = "Pending"
+    
+    # Other fields
+    client_type: Optional[str] = None
+    sex: Optional[str] = None
+    gender_identity: Optional[str] = None
+    
+    # Relationships
+    patient: Patient = Relationship(back_populates="appointments")
+    practitioner: Provider = Relationship(back_populates="appointments")
+    location: Location = Relationship(back_populates="appointments")  # Fixed here
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.created_at is None:
+            self.created_at = datetime.now()
+        if self.updated_at is None:
+            self.updated_at = datetime.now()
+
+
 # Schemas for API requests/responses
 class PatientCreate(SQLModel):
     first_name: str
@@ -212,6 +269,7 @@ class PatientCreate(SQLModel):
     zipcode: str
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
+    client_number: Optional[str] = None
 
 
 class InsuranceCompanyCreate(SQLModel):
@@ -243,6 +301,27 @@ class PatientInsuranceCreate(SQLModel):
     is_primary: bool = True
 
 
+class LocationCreate(SQLModel):
+    name: str
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zipcode: Optional[str] = None
+    phone: Optional[str] = None
 
 
-
+class AppointmentCreate(SQLModel):
+    patient_id: int
+    practitioner_id: int
+    location_id: int
+    appointment_datetime: datetime
+    end_time: time
+    appointment_type: str
+    appointment_subtype: Optional[str] = None
+    invoice_number: Optional[str] = None
+    notes: Optional[str] = None
+    flag: Optional[str] = None
+    status: str = "Pending"
+    client_type: Optional[str] = None
+    sex: Optional[str] = None
+    gender_identity: Optional[str] = None

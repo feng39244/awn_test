@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Google Drive Sync - Filtered Files{% endblock %}
+
+{% block page_title %}
+<span>Google Drive Files (Filtered by "{{ filter_name }}")</span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h5>Filtered Files from Google Drive</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>File Name</th>
+                        <th>MIME Type</th>
+                        <th>Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in files %}
+                    <tr>
+                        <td>{{ file.name }}</td>
+                        <td>{{ file.mimeType }}</td>
+                        <td><a href="{{ file.webViewLink }}" target="_blank">View</a></td>
+                    </tr>
+                    {% endfor %}
+                    {% if not files %}
+                    <tr>
+                        <td colspan="3" class="text-center">No files found matching "{{ filter_name }}".</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

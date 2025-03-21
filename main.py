@@ -211,3 +211,22 @@ async def read_ready_to_view(request: Request, db: Session = Depends(get_db)):
         "patient_list.html",
         {"request": request, "patients": patients, "status_filter": "ready-to-view"}
     )
+# Sync Google Drive route
+@app.get("/sync-drive", response_class=HTMLResponse)
+async def sync_drive(request: Request, filter_name: str = "patient"):
+    try:
+        service = get_drive_service()
+        # Query files with name filter
+        query = f"'{filter_name}' in name"
+        results = service.files().list(
+            q=query,
+            pageSize=10,
+            fields="nextPageToken, files(id, name, mimeType, webViewLink)"
+        ).execute()
+        files = results.get('files', [])
+        return templates.TemplateResponse(
+            "drive_files.html",
+            {"request": request, "files": files, "filter_name": filter_name}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
