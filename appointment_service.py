@@ -140,6 +140,7 @@ def get_or_create_location(
     session.flush()  # Get the ID without committing
     
     return location
+
 def parse_datetime(date_str):
     """Parse date string into datetime object."""
     if not date_str:

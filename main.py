@@ -248,7 +248,8 @@ async def upload_appointments_page(request: Request):
 @app.post("/api/upload-appointments")
 async def upload_appointments(
     file: UploadFile = File(...),
-    has_headers: bool = Form(True)
+    has_headers: bool = Form(True),
+    db: Session = Depends(get_db)
 ):
     """
     Process the uploaded CSV file with patient appointment data
@@ -256,50 +257,122 @@ async def upload_appointments(
     Args:
         file: The uploaded CSV file
         has_headers: Whether the file has headers in the first row
+        db: Database session
     
     Returns:
         JSON response with success status or error message
     """
     try:
+        # Validate file format
+        if not file.filename.endswith('.csv'):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "Invalid file format. Please upload a CSV file."
+                }
+            )
+        
         # Read the CSV file content
         contents = await file.read()
         
         # Decode and parse CSV
-        decoded_content = contents.decode('utf-8')
+        decoded_content = contents.decode('utf-8-sig')  # Handle potential BOM
         csv_data = io.StringIO(decoded_content)
         
-        # Parse CSV with pandas
+        # Parse CSV using DictReader to match the appointment_service approach
         if has_headers:
-            df = pd.read_csv(csv_data)
+            reader = csv.DictReader(csv_data)
         else:
-            df = pd.read_csv(csv_data, header=None)
-            # Assign default column names
+            # If no headers, add default column names
             default_columns = [
-                'patient_id', 'patient_name', 'appointment_date', 
-                'appointment_time', 'service_type', 'insurance_provider'
+                'Client', 'Client Number', 'Mobile', 'Sex', 'Gender Identity', 
+                'Postcode', 'State', 'Practitioner', 'Location', 'Date', 
+                'End Time', 'Appointment Type', 'Type', 'Invoice', 
+                'Appointment Notes', 'Appointment Flag', 'Status'
             ]
-            # If the number of columns doesn't match, extend or truncate the defaults list
-            if len(df.columns) <= len(default_columns):
-                df.columns = default_columns[:len(df.columns)]
-            else:
-                # Add numbered columns for any extras
-                extended_columns = default_columns + [f'column_{i}' for i in range(len(default_columns)+1, len(df.columns)+1)]
-                df.columns = extended_columns
+            reader = csv.DictReader(csv_data, fieldnames=default_columns)
         
-        # TODO: You would typically validate and process the data here
-        # For example, check required columns, data types, etc.
+        # Track stats (similar to appointment_service)
+        stats = {
+            "total_processed": 0,
+            "created": 0,
+            "errors": 0,
+            "error_details": []
+        }
         
-        # TODO: Save the data to your database
-        # For demonstration, we'll just print the first few rows
-        print(f"Processed {len(df)} appointment records")
-        print(df.head())
+        # Process each row
+        for row in reader:
+            try:
+                stats["total_processed"] += 1
+                
+                # Get or create patient (adapting from appointment_service)
+                patient = get_or_create_patient(
+                    session=db,
+                    client_name=row.get("Client", ""),
+                    client_number=row.get("Client Number", ""),
+                    mobile=row.get("Mobile", ""),
+                    sex=row.get("Sex", ""),
+                    gender_identity=row.get("Gender Identity", ""),
+                    postcode=row.get("Postcode", ""),
+                    state=row.get("State", "")
+                )
+                
+                # Get or create provider
+                provider = get_or_create_provider(
+                    session=db,
+                    practitioner_code=row.get("Practitioner", "")
+                )
+                
+                # Get or create location
+                location = get_or_create_location(
+                    session=db,
+                    location_name=row.get("Location", "")
+                )
+                
+                # Parse appointment date and time
+                appointment_datetime = parse_datetime(row.get("Date", ""))
+                end_time = parse_time(row.get("End Time", ""))
+                
+                # Create appointment
+                appointment = Appointment(
+                    patient_id=patient.patient_id,
+                    practitioner_id=provider.provider_id,
+                    location_id=location.location_id,
+                    appointment_datetime=appointment_datetime,
+                    end_time=end_time,
+                    appointment_type=row.get("Appointment Type", ""),
+                    appointment_subtype=row.get("Type", ""),  # Using the "Type" field for subtype
+                    invoice_number=row.get("Invoice", ""),
+                    notes=row.get("Appointment Notes", ""),
+                    flag=row.get("Appointment Flag", ""),
+                    status=row.get("Status", "Pending"),
+                    client_type=row.get("Type", ""),
+                    sex=row.get("Sex", ""),
+                    gender_identity=row.get("Gender Identity", ""),
+                    created_at=datetime.now(),
+                    updated_at=datetime.now()
+                )
+                
+                db.add(appointment)
+                stats["created"] += 1
+                
+            except Exception as e:
+                stats["errors"] += 1
+                stats["error_details"].append({
+                    "row": stats["total_processed"],
+                    "error": str(e)
+                })
         
-        # Return success response
+        # Commit all changes at the end
+        db.commit()
+        
+        # Return success response with detailed stats
         return JSONResponse(
             content={
                 "success": True,
-                "message": f"Successfully processed {len(df)} appointment records",
-                "rows_processed": len(df)
+                "message": f"Successfully processed {stats['total_processed']} appointment records",
+                "stats": stats
             }
         )
         
