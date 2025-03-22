@@ -10,7 +10,7 @@ const translations = {
 
     // Page title and buttons
     pageTitle: "Insurance Billing Dashboard",
-    btnSyncCalendar: "Sync Calendar",
+    btnSyncCalendar: "Sync Appointments",
     btnSyncAuth: "Sync Authorization",
 
     // Demo mode

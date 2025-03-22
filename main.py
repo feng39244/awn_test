@@ -19,6 +19,15 @@ from models import (
 from seed import insert_sample_data
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+import pandas as pd
+import csv
+import io
+import os
+from typing import Optional
 # Create FastAPI app
 app = FastAPI(title="CMS-1500 Billing System")
 
@@ -230,3 +239,76 @@ async def sync_drive(request: Request, filter_name: str = "patient"):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/upload-appointments")
+async def upload_appointments_page(request: Request):
+    """Render the appointment upload page"""
+    return templates.TemplateResponse("upload_appointments.html", {"request": request})
+
+@app.post("/api/upload-appointments")
+async def upload_appointments(
+    file: UploadFile = File(...),
+    has_headers: bool = Form(True)
+):
+    """
+    Process the uploaded CSV file with patient appointment data
+    
+    Args:
+        file: The uploaded CSV file
+        has_headers: Whether the file has headers in the first row
+    
+    Returns:
+        JSON response with success status or error message
+    """
+    try:
+        # Read the CSV file content
+        contents = await file.read()
+        
+        # Decode and parse CSV
+        decoded_content = contents.decode('utf-8')
+        csv_data = io.StringIO(decoded_content)
+        
+        # Parse CSV with pandas
+        if has_headers:
+            df = pd.read_csv(csv_data)
+        else:
+            df = pd.read_csv(csv_data, header=None)
+            # Assign default column names
+            default_columns = [
+                'patient_id', 'patient_name', 'appointment_date', 
+                'appointment_time', 'service_type', 'insurance_provider'
+            ]
+            # If the number of columns doesn't match, extend or truncate the defaults list
+            if len(df.columns) <= len(default_columns):
+                df.columns = default_columns[:len(df.columns)]
+            else:
+                # Add numbered columns for any extras
+                extended_columns = default_columns + [f'column_{i}' for i in range(len(default_columns)+1, len(df.columns)+1)]
+                df.columns = extended_columns
+        
+        # TODO: You would typically validate and process the data here
+        # For example, check required columns, data types, etc.
+        
+        # TODO: Save the data to your database
+        # For demonstration, we'll just print the first few rows
+        print(f"Processed {len(df)} appointment records")
+        print(df.head())
+        
+        # Return success response
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": f"Successfully processed {len(df)} appointment records",
+                "rows_processed": len(df)
+            }
+        )
+        
+    except Exception as e:
+        # Return error response
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )

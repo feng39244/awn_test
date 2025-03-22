@@ -19,9 +19,9 @@
 
 {% block header_actions %}
 <div>
-    <button id="sync-calendar-btn" class="btn btn-primary" onclick="simulateSync('calendar')">
-        <i id="sync-calendar-icon" class="bi bi-calendar-check me-2"></i> <span data-i18n="btnSyncCalendar">Sync Calendar</span>
-    </button>
+    <a href="/upload-appointments" id="sync-calendar-btn" class="btn btn-primary">
+        <i id="sync-calendar-icon" class="bi bi-calendar-check me-2"></i> <span data-i18n="btnSyncCalendar">Sync Appointments</span>
+    </a>
     <button id="sync-auth-btn" class="btn btn-primary" onclick="simulateSync('auth')">
         <i id="sync-auth-icon" class="bi bi-calendar-check me-2"></i> <span data-i18n="btnSyncAuth">Sync Authorization</span>
     </button>
