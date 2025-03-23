@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Patient Billing System - All Appointments{% endblock %}
+
+{% block page_title %}
+<span data-i18n="allAppointmentsTitle">All Appointments</span>
+{% endblock %}
+
+{% block header_actions %}
+<div>
+    <button class="btn btn-primary">
+        <i class="bi bi-plus-circle me-2"></i> <span data-i18n="btnAddAppointment">Add Appointment</span>
+    </button>
+    <button class="btn btn-outline-primary ms-2">
+        <i class="bi bi-download me-2"></i> <span data-i18n="btnExport">Export</span>
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Filters and Search -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label for="statusFilter" class="form-label" data-i18n="filterStatus">Status</label>
+                <select id="statusFilter" class="form-select">
+                    <option value="" data-i18n="filterAll">All</option>
+                    <option value="Scheduled">Scheduled</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
+                    <option value="No Show">No Show</option>
+                    <option value="Pending">Pending</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="providerFilter" class="form-label" data-i18n="filterProvider">Provider</label>
+                <select id="providerFilter" class="form-select">
+                    <option value="" data-i18n="filterAll">All</option>
+                    <option value="Dr. Smith">Dr. Smith</option>
+                    <option value="Dr. Johnson">Dr. Johnson</option>
+                    <option value="Dr. Williams">Dr. Williams</option>
+                    <option value="Dr. Brown">Dr. Brown</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="dateRangeFilter" class="form-label" data-i18n="filterDateRange">Date Range</label>
+                <select id="dateRangeFilter" class="form-select">
+                    <option value="today">Today</option>
+                    <option value="tomorrow">Tomorrow</option>
+                    <option value="this_week">This Week</option>
+                    <option value="next_week">Next Week</option>
+                    <option value="this_month">This Month</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="appointmentSearch" class="form-label" data-i18n="searchAppointment">Search</label>
+                <div class="input-group">
+                    <input type="text" id="appointmentSearch" class="form-control" placeholder="Patient name, ID" data-i18n-placeholder="searchPlaceholderAppointment">
+                    <button class="btn btn-outline-primary" type="button">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Appointment List -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th data-i18n="tableAppointmentId">Appointment ID</th>
+                        <th data-i18n="tableDateTime">Date & Time</th>
+                        <th data-i18n="tablePatientName">Patient Name</th>
+                        <th data-i18n="tablePractitioner">Practitioner</th>
+                        <th data-i18n="tableLocation">Location</th>
+                        <th data-i18n="tableType">Type</th>
+                        <th data-i18n="tableStatus">Status</th>
+                        <th class="text-end" data-i18n="tableActions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for appointment in appointments %}
+                    <tr>
+                        <td>{{ appointment.appointment_id }}</td>
+                        <td>
+                            {% if appointment.appointment_datetime %}
+                                {{ appointment.appointment_datetime.strftime('%Y-%m-%d %H:%M') }}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                        <td class="fw-bold">
+                            {% if appointment.patient %}
+                                {{ appointment.patient.first_name }} {{ appointment.patient.last_name }}
+                            {% else %}
+                                Unknown Patient
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if appointment.practitioner %}
+                                {{ appointment.practitioner.first_name }} {{ appointment.practitioner.last_name }}
+                            {% else %}
+                                Unknown Provider
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if appointment.location %}
+                                {{ appointment.location.name }}
+                            {% else %}
+                                Unknown Location
+                            {% endif %}
+                        </td>
+                        <td>{{ appointment.appointment_type or "N/A" }}</td>
+                        <td>
+                            <span class="badge {% if appointment.status == 'Completed' %}bg-success{% elif appointment.status == 'Scheduled' %}bg-primary{% elif appointment.status == 'Cancelled' %}bg-danger{% elif appointment.status == 'No Show' %}bg-warning{% else %}bg-secondary{% endif %}">
+                                {{ appointment.status or "Pending" }}
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-i18n="btnActions">Actions</button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item" href="/appointments/{{ appointment.appointment_id }}"><i class="bi bi-file-text me-2"></i> <span data-i18n="actionViewDetails">View Details</span></a></li>
+                                    <li><a class="dropdown-item" href="#"><i class="bi bi-pencil me-2"></i> <span data-i18n="actionEdit">Edit</span></a></li>
+                                    {% if appointment.status != 'Completed' and appointment.status != 'Cancelled' %}
+                                    <li><a class="dropdown-item text-success" href="#"><i class="bi bi-check-circle me-2"></i> <span data-i18n="actionMarkCompleted">Mark as Completed</span></a></li>
+                                    {% endif %}
+                                    {% if appointment.status != 'Cancelled' %}
+                                    <li><a class="dropdown-item text-danger" href="#"><i class="bi bi-x-circle me-2"></i> <span data-i18n="actionCancel">Cancel</span></a></li>
+                                    {% endif %}
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item" href="#"><i class="bi bi-clipboard me-2"></i> <span data-i18n="actionCreateClaim">Create Claim</span></a></li>
+                                </ul>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not appointments %}
+                    <tr>
+                        <td colspan="8" class="text-center">No appointments found.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <nav aria-label="Appointment list pagination" class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if skip > 0 %}
+                <li class="page-item">
+                    <a class="page-link" href="/appointments/?skip={{ skip - limit }}&limit={{ limit }}" data-i18n="paginationPrevious">Previous</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <a class="page-link" href="#" tabindex="-1" aria-disabled="true" data-i18n="paginationPrevious">Previous</a>
+                </li>
+                {% endif %}
+
+                {% set current_page = (skip // limit) + 1 %}
+                {% set total_pages = (appointments | length) // limit + 1 if (appointments | length) % limit else (appointments | length) // limit %}
+                {% for page in range(1, total_pages + 1) %}
+                <li class="page-item {% if page == current_page %}active{% endif %}">
+                    <a class="page-link" href="/appointments/?skip={{ (page - 1) * limit }}&limit={{ limit }}">{{ page }}</a>
+                </li>
+                {% endfor %}
+
+                {% if appointments | length == limit %}
+                <li class="page-item">
+                    <a class="page-link" href="/appointments/?skip={{ skip + limit }}&limit={{ limit }}" data-i18n="paginationNext">Next</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <a class="page-link" href="#" data-i18n="paginationNext">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+</div>
+{% endblock %}

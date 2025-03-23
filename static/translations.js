@@ -7,6 +7,7 @@ const translations = {
     navReadyToBill: "Ready to Bill",
     navInProgress: "In Progress",
     navAllPatients: "All Patients",
+    navAllAppointments: "All appointments"，
 
     // Page title and buttons
     pageTitle: "Insurance Billing Dashboard",
@@ -89,6 +90,7 @@ const translations = {
     navReadyToBill: "准备计费",
     navInProgress: "处理中",
     navAllPatients: "所有患者",
+    navAllAppointments: "所有预约"，
 
     // Page title and buttons
     pageTitle: "保险计费仪表板",

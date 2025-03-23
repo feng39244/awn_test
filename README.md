@@ -116,6 +116,14 @@ This project uses Alembic for managing database migrations:
   alembic history --verbose
   ```
 
+## Connect to database and check tables
+```
+psql -U postgres -h localhost -d userdb
+\dt
+SELECT * FROM public.appointments;
+
+```
+
 ## Usage
 
 Once the application is running, you can access:

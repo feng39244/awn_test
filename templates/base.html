@@ -31,7 +31,7 @@
                                 <a class="nav-link" href="#" data-i18n="navReadyToBill">Ready to Bill</a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link" href="#" data-i18n="navInProgress">In Progress</a>
+                                <a class="nav-link{% if request.path == '/appointments/' %} active{% endif %}" href="/appointments/" data-i18n="navAllAppointments">All appointment</a>
                             </li>
                             <li class="nav-item">
                                 <a class="nav-link{% if request.path == '/patients/' %} active{% endif %}" href="/patients/" data-i18n="navAllPatients">All Patients</a>

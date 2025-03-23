@@ -13,6 +13,7 @@ from models import (
     Patient, PatientCreate,
     InsuranceCompany, InsuranceCompanyCreate,
     PatientInsurance, PatientInsuranceCreate,
+    Appointment,
     Provider, DiagnosisCode, ProcedureCode, Claim, ServiceLine, 
     UserCreate
 )
@@ -28,6 +29,8 @@ import csv
 import io
 import os
 from typing import Optional
+from sqlalchemy import func, or_
+from datetime import timedelta
 # Create FastAPI app
 app = FastAPI(title="CMS-1500 Billing System")
 
@@ -385,3 +388,38 @@ async def upload_appointments(
                 "error": str(e)
             }
         )
+@app.get("/patients/", response_class=HTMLResponse)
+async def read_patients(
+    request: Request,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    patients = db.exec(select(Patient).offset(skip).limit(limit)).all()
+    return templates.TemplateResponse(
+        "all-patients.html",
+        {
+            "request": request,
+            "patients": patients,
+            "skip": skip,
+            "limit": limit
+        }
+    )
+@app.get("/appointments/", response_class=HTMLResponse)
+async def read_appointments(
+    request: Request,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    appointments = db.exec(select(Appointment).offset(skip).limit(limit)).all()
+    print("appointments", appointments)
+    return templates.TemplateResponse(
+        "all_appointments.html",
+        {
+            "request": request,
+            "appointments": appointments,
+            "skip": skip,
+            "limit": limit
+        }
+    )
