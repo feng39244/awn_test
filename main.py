@@ -31,6 +31,7 @@ import os
 from typing import Optional
 from sqlalchemy import func, or_
 from datetime import timedelta
+import appointment_service
 # Create FastAPI app
 app = FastAPI(title="CMS-1500 Billing System")
 
@@ -52,14 +53,14 @@ def seed_sample_data():
     insert_sample_data()
     return {"message": "Sample data inserted successfully"}
 
-# Patient endpoints
 @app.post("/patients/", response_model=Patient)
-def create_patient(patient: PatientCreate, db: Session = Depends(get_db)):
-    db_patient = Patient.from_orm(patient)
-    db.add(db_patient)
+async def create_patient(patient_data: PatientCreate, db: Session = Depends(get_db)):
+    # Convert PatientCreate to Patient for database insertion
+    patient = Patient(**patient_data.dict(exclude_unset=True))
+    db.add(patient)
     db.commit()
-    db.refresh(db_patient)
-    return db_patient
+    db.refresh(patient)
+    return patient
 
 # @app.get("/patients/", response_model=List[Patient])
 # def read_patients(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
@@ -310,7 +311,7 @@ async def upload_appointments(
                 stats["total_processed"] += 1
                 
                 # Get or create patient (adapting from appointment_service)
-                patient = get_or_create_patient(
+                patient = appointment_service.get_or_create_patient(
                     session=db,
                     client_name=row.get("Client", ""),
                     client_number=row.get("Client Number", ""),
@@ -322,20 +323,20 @@ async def upload_appointments(
                 )
                 
                 # Get or create provider
-                provider = get_or_create_provider(
+                provider = appointment_service.get_or_create_provider(
                     session=db,
                     practitioner_code=row.get("Practitioner", "")
                 )
                 
                 # Get or create location
-                location = get_or_create_location(
+                location = appointment_service.get_or_create_location(
                     session=db,
                     location_name=row.get("Location", "")
                 )
                 
                 # Parse appointment date and time
-                appointment_datetime = parse_datetime(row.get("Date", ""))
-                end_time = parse_time(row.get("End Time", ""))
+                appointment_datetime = appointment_service.parse_datetime(row.get("Date", ""))
+                end_time = appointment_service.parse_time(row.get("End Time", ""))
                 
                 # Create appointment
                 appointment = Appointment(

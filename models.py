@@ -16,34 +16,29 @@ class TimeStampMixin:
     created_at: Optional[datetime] = Field(default=None)
     updated_at: Optional[datetime] = Field(default=None)
 
-class Patient(SQLModel, TimeStampMixin, table=True):
+class Patient(SQLModel, table=True):
     __tablename__ = "patients"
     
     patient_id: Optional[int] = Field(default=None, primary_key=True)
     first_name: str = Field(...)
     middle_name: Optional[str] = None
-    last_name: str
-    date_of_birth: date
-    gender: str
-    address: str
-    city: str
-    state: str
-    zipcode: str
+    last_name: str = Field(...)
+    date_of_birth: Optional[date] = None
+    gender: Optional[str] = None  # Consider adding gender_identity if needed
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zipcode: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     client_number: Optional[str] = None
-    
+    created_at: Optional[datetime] = Field(default_factory=datetime.now)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.now)
+
     # Relationships
     insurances: List["PatientInsurance"] = Relationship(back_populates="patient")
     claims: List["Claim"] = Relationship(back_populates="patient")
     appointments: List["Appointment"] = Relationship(back_populates="patient")
-    
-    def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-            if self.created_at is None:
-                self.created_at = datetime.now()
-            if self.updated_at is None:
-                self.updated_at = datetime.now()
 
 class InsuranceCompany(SQLModel, TimeStampMixin, table=True):
     __tablename__ = "insurance_companies"
@@ -256,17 +251,16 @@ class Appointment(SQLModel, TimeStampMixin, table=True):
             self.updated_at = datetime.now()
 
 
-# Schemas for API requests/responses
 class PatientCreate(SQLModel):
-    first_name: str
+    first_name: str  # Required
+    last_name: str   # Required
     middle_name: Optional[str] = None
-    last_name: str
-    date_of_birth: date
-    gender: str
-    address: str
-    city: str
-    state: str
-    zipcode: str
+    date_of_birth: Optional[date] = None
+    gender: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zipcode: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     client_number: Optional[str] = None
