@@ -180,6 +180,215 @@ def parse_time(time_str):
     
     return None
 
+def process_uploaded_appointments(file: UploadFile, has_headers: bool, session: Session) -> Dict[str, Any]:
+    """
+    Process a CSV file with patient appointment data and store appointments in the database.
+
+    Args:
+        file: The uploaded CSV file.
+        has_headers: Whether the CSV file has headers in the first row.
+        session: Database session.
+
+    Returns:
+        A dictionary containing processing stats (total_processed, created, errors, error_details).
+    """
+    # Track stats
+    stats = {
+        "total_processed": 0,
+        "created": 0,
+        "errors": 0,
+        "error_details": []
+    }
+
+    try:
+        # Read the CSV file content
+        contents = file.file.read()
+
+        # Decode and parse CSV
+        decoded_content = contents.decode('utf-8-sig')  # Handle potential BOM
+        csv_data = io.StringIO(decoded_content)
+
+        # Parse CSV using DictReader
+        if has_headers:
+            reader = csv.DictReader(csv_data)
+        else:
+            default_columns = [
+                'Client', 'Client Number', 'Mobile', 'Sex', 'Gender Identity', 
+                'Postcode', 'State', 'Practitioner', 'Location', 'Date', 
+                'End Time', 'Appointment Type', 'Type', 'Invoice', 
+                'Appointment Notes', 'Appointment Flag', 'Status'
+            ]
+            reader = csv.DictReader(csv_data, fieldnames=default_columns)
+
+        # Process each row
+        for row in reader:
+            try:
+                stats["total_processed"] += 1
+
+                # Get or create patient
+                patient = get_or_create_patient(
+                    session=session,
+                    client_name=row.get("Client", ""),
+                    client_number=row.get("Client Number", ""),
+                    mobile=row.get("Mobile", ""),
+                    sex=row.get("Sex", ""),
+                    gender_identity=row.get("Gender Identity", ""),
+                    postcode=row.get("Postcode", ""),
+                    state=row.get("State", "")
+                )
+                if patient is None:
+                    raise ValueError(f"Failed to get or create patient for name: {row.get('Client', '')}")
+                print(f"finished checking patient {patient}, patient_id={patient.patient_id}")
+
+                # Get or create provider
+                print('row.get("Practitioner", ""):', row.get("Practitioner", ""))
+                provider = get_or_create_provider(session=session, name=row.get("Practitioner", ""))
+                if provider is None:
+                    raise ValueError(f"Failed to get or create provider for name: {row.get('Practitioner', '')}")
+                print(f"finished checking provider {provider}")
+
+                # Get or create location
+                location = get_or_create_location(session=session, location_name=row.get("Location", ""))
+                if location is None:
+                    raise ValueError(f"Failed to get or create location for name: {row.get('Location', '')}")
+                print(f"finished checking location {location}")
+
+                # Parse appointment date and time
+                parsed_datetime = parse_datetime(row.get("Date", ""))
+                print(f"Parsed datetime: {parsed_datetime}")
+                appointment_datetime = parsed_datetime or datetime.now()
+                print(f"Final appointment_datetime: {appointment_datetime}")
+                end_time = parse_time(row.get("End Time", "")) or time(0, 0)
+
+                # Create appointment
+                appointment = Appointment(
+                    patient_id=patient.patient_id,
+                    practitioner_id=provider.provider_id,
+                    location_id=location.location_id,
+                    appointment_datetime=appointment_datetime,
+                    end_time=end_time,
+                    appointment_type=row.get("Appointment Type", "Unknown"),
+                    appointment_subtype=row.get("Type", ""),
+                    invoice_number=row.get("Invoice", ""),
+                    notes=row.get("Appointment Notes", ""),
+                    flag=row.get("Appointment Flag", ""),
+                    status=row.get("Status", "Pending"),
+                    client_type=row.get("Type", ""),
+                    sex=row.get("Sex", ""),
+                    gender_identity=row.get("Gender Identity", ""),
+                    created_at=datetime.now(),
+                    updated_at=datetime.now()
+                )
+
+                session.add(appointment)
+                stats["created"] += 1
+                print(f"finished checking appointment {appointment}")
+
+            except Exception as e:
+                print(f"Error at row {stats['total_processed']}: {str(e)}")
+                stats["errors"] += 1
+                stats["error_details"].append({
+                    "row": stats["total_processed"],
+                    "error": str(e)
+                })
+
+        # Commit all changes at the end
+        session.commit()
+
+    except Exception as e:
+        # Roll back the session on error
+        session.rollback()
+        raise Exception(f"Failed to process CSV file: {str(e)}")
+
+    return stats
+
+@router.post("/appointments/csv", status_code=status.HTTP_201_CREATED)
+def import_appointments_from_csv(
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session)
+):
+        """Import appointments from CSV file."""
+        if not file.filename.endswith('.csv'):
+            raise ValueError("Invalid file format. Please upload a CSV file.")
+        
+        contents = file.read()
+        buffer = io.StringIO(contents.decode('utf-8-sig'))  # Handle potential BOM
+        reader = csv.DictReader(buffer)
+        
+        # Track stats
+        stats = {
+            "total_processed": 0,
+            "created": 0,
+            "errors": 0,
+            "error_details": []
+        }
+        
+        for row in reader:
+            try:
+                stats["total_processed"] += 1
+                
+                # Get or create patient
+                patient = get_or_create_patient(
+                    session=session,
+                    client_name=row.get("Client", ""),
+                    client_number=row.get("Client Number", ""),
+                    mobile=row.get("Mobile", ""),
+                    sex=row.get("Sex", ""),
+                    gender_identity=row.get("Gender Identity", ""),
+                    postcode=row.get("Postcode", ""),
+                    state=row.get("State", "")
+                )
+                
+                # Get or create provider
+                provider = get_or_create_provider(
+                    session=session,
+                    practitioner_code=row.get("Practitioner", "")
+                )
+                
+                # Get or create location
+                location = get_or_create_location(
+                    session=session,
+                    name=row.get("Location", "")
+                )
+                
+                # Parse appointment date and time
+                appointment_datetime = parse_datetime(row.get("Date", ""))
+                end_time = parse_time(row.get("End Time", ""))
+                
+                # Create appointment
+                appointment = Appointment(
+                    patient_id=patient.patient_id,
+                    practitioner_id=provider.provider_id,
+                    location_id=location.location_id,
+                    appointment_datetime=appointment_datetime,
+                    end_time=end_time,
+                    appointment_type=row.get("Appointment Type", ""),
+                    appointment_subtype=row.get("Type", ""),  # Using the "Type" field for subtype
+                    invoice_number=row.get("Invoice", ""),
+                    notes=row.get("Appointment Notes", ""),
+                    flag=row.get("Appointment Flag", ""),
+                    status=row.get("Status", "Pending"),
+                    client_type=row.get("Type", ""),
+                    sex=row.get("Sex", ""),
+                    gender_identity=row.get("Gender Identity", ""),
+                    created_at=datetime.now(),
+                    updated_at=datetime.now()
+                )
+                
+                session.add(appointment)
+                stats["created"] += 1
+                
+            except Exception as e:
+                stats["errors"] += 1
+                stats["error_details"].append({
+                    "row": stats["total_processed"],
+                    "error": str(e)
+                })
+        
+        # Commit all changes at the end
+        session.commit()
+        
+        return stats
 
 def process_csv_file(file_path: str):
     """Process a CSV file using the import function."""

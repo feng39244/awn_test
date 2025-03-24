@@ -257,15 +257,15 @@ async def upload_appointments(
     db: Session = Depends(get_db)
 ):
     """
-    Process the uploaded CSV file with patient appointment data
-    
+    Process the uploaded CSV file with patient appointment data.
+
     Args:
-        file: The uploaded CSV file
-        has_headers: Whether the file has headers in the first row
-        db: Database session
-    
+        file: The uploaded CSV file.
+        has_headers: Whether the file has headers in the first row.
+        db: Database session.
+
     Returns:
-        JSON response with success status or error message
+        JSON response with success status or error message.
     """
     try:
         # Validate file format
@@ -277,118 +277,15 @@ async def upload_appointments(
                     "error": "Invalid file format. Please upload a CSV file."
                 }
             )
-        
-        # Read the CSV file content
-        contents = await file.read()
-        
-        # Decode and parse CSV
-        decoded_content = contents.decode('utf-8-sig')  # Handle potential BOM
-        csv_data = io.StringIO(decoded_content)
-        
-        # Parse CSV using DictReader to match the appointment_service approach
-        if has_headers:
-            reader = csv.DictReader(csv_data)
-        else:
-            # If no headers, add default column names
-            default_columns = [
-                'Client', 'Client Number', 'Mobile', 'Sex', 'Gender Identity', 
-                'Postcode', 'State', 'Practitioner', 'Location', 'Date', 
-                'End Time', 'Appointment Type', 'Type', 'Invoice', 
-                'Appointment Notes', 'Appointment Flag', 'Status'
-            ]
-            reader = csv.DictReader(csv_data, fieldnames=default_columns)
-        
-        # Track stats (similar to appointment_service)
-        stats = {
-            "total_processed": 0,
-            "created": 0,
-            "errors": 0,
-            "error_details": []
-        }
-        
-        # Process each row
-        for row in reader:
-            try:
-                stats["total_processed"] += 1
-                
-                # Get or create patient (adapting from appointment_service)
-                patient = appointment_service.get_or_create_patient(
-                    session=db,
-                    client_name=row.get("Client", ""),
-                    client_number=row.get("Client Number", ""),
-                    mobile=row.get("Mobile", ""),
-                    sex=row.get("Sex", ""),
-                    gender_identity=row.get("Gender Identity", ""),
-                    postcode=row.get("Postcode", ""),
-                    state=row.get("State", "")
-                )
-                if patient is None:  # Shouldn’t happen with current logic, but good practice
-                    raise ValueError(f"Failed to get or create provider for name: {row.get('patient', '')}")
-                print(f"finished checking patient {patient}, patient_id={patient.patient_id}")
-                print('row.get("Practitioner", ""):', row.get("Practitioner", ""))
-                # Get or create provider
-                provider = appointment_service.get_or_create_provider(
-                    session=db,
-                    name=row.get("Practitioner", "")
-                )
-                if provider is None:  # Shouldn’t happen with current logic, but good practice
-                    raise ValueError(f"Failed to get or create provider for name: {row.get('Practitioner', '')}")
-                print(f"finished checking provider {provider}")
 
-                # Get or create location
-                location = appointment_service.get_or_create_location(
-                    session=db,
-                    location_name=row.get("Location", "")
-                )
-                if location is None:  # Shouldn’t happen with current logic, but good practice
-                    raise ValueError(f"Failed to get or create provider for name: {row.get('location', '')}")
-                print(f"finished checking location", location)
-                # Parse appointment date and time
-                
+        # Call the service function to process the CSV
+        stats = appointment_service.process_uploaded_appointments(
+            file=file,
+            has_headers=has_headers,
+            session=db
+        )
 
-                parsed_datetime = appointment_service.parse_datetime(row.get("Date", ""))
-                print(f"Parsed datetime: {parsed_datetime}")
-                appointment_datetime = parsed_datetime or datetime.now()
-                print(f"Final appointment_datetime: {appointment_datetime}")
-                end_time = appointment_service.parse_time(row.get("End Time", "")) or time(0, 0)
-                appointment_type = row.get("Appointment Type", "Unknown")
-                
-                # Create appointment
-                appointment = Appointment(
-                    patient_id=patient.patient_id,
-                    practitioner_id=provider.provider_id,
-                    location_id=location.location_id,
-                    appointment_datetime=appointment_datetime,
-                    end_time=end_time,
-                    appointment_type=row.get("Appointment Type", ""),
-                    appointment_subtype=row.get("Type", ""),  # Using the "Type" field for subtype
-                    invoice_number=row.get("Invoice", ""),
-                    notes=row.get("Appointment Notes", ""),
-                    flag=row.get("Appointment Flag", ""),
-                    status=row.get("Status", "Pending"),
-                    client_type=row.get("Type", ""),
-                    sex=row.get("Sex", ""),
-                    gender_identity=row.get("Gender Identity", ""),
-                    created_at=datetime.now(),
-                    updated_at=datetime.now()
-                )
-                
-                db.add(appointment)
-                stats["created"] += 1
-                print(f"finished checking appointment", appointment)
-                
-            except Exception as e:
-                print(f"Error at row {stats['total_processed']}: {str(e)}")
-                stats["errors"] += 1
-                stats["error_details"].append({
-                    "row": stats["total_processed"],
-                    "error": str(e)
-                })
-        
-        # Commit all changes at the end
-        db.commit()
-        
-        # Return success response with detailed stats
+        # Return success response with stats
         return JSONResponse(
             content={
                 "success": True,
@@ -396,7 +293,7 @@ async def upload_appointments(
                 "stats": stats
             }
         )
-        
+
     except Exception as e:
         # Return error response
         return JSONResponse(
