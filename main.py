@@ -1,38 +1,33 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Request, UploadFile, File, Form
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
-from datetime import time
-from typing import List
-from datetime import datetime, timedelta
-
-# Import from our separated modules
-from database import get_db, create_tables, User, Token, get_user
-from auth import authenticate_user, create_access_token, get_current_user, get_password_hash
-from models import (
-    Patient, PatientCreate,
-    InsuranceCompany, InsuranceCompanyCreate,
-    PatientInsurance, PatientInsuranceCreate,
-    Appointment,
-    Provider, DiagnosisCode, ProcedureCode, Claim, ServiceLine, 
-    UserCreate
-)
-from seed import insert_sample_data
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
-from fastapi import FastAPI, UploadFile, File, Form, Request
-from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from datetime import datetime, timedelta, time
+from typing import List, Optional
 import pandas as pd
 import csv
 import io
 import os
-from typing import Optional
 from sqlalchemy import func, or_
-from datetime import timedelta
+
+# Import from our separated modules
+from database import get_db, create_tables, User, get_user
+from auth import authenticate_user, create_access_token, get_current_user, get_password_hash
+from models import (
+    Patient, PatientCreate, PatientRead,
+    InsuranceCompany, InsuranceCompanyCreate, InsuranceCompanyRead,
+    PatientInsurance, PatientInsuranceCreate, PatientInsuranceRead,
+    Appointment, AppointmentCreate, AppointmentRead,
+    Provider, DiagnosisCode, ProcedureCode, Claim, ServiceLine,
+    UserCreate, UserRead, Token, TokenData,
+    Gender, AppointmentStatus, ClaimStatus,
+    Location, LocationCreate, LocationRead
+)
+from seed import insert_sample_data
 import appointment_service
+from fastapi.templating import Jinja2Templates
+
 # Create FastAPI app
 app = FastAPI(title="CMS-1500 Billing System")
 
@@ -54,19 +49,16 @@ def seed_sample_data():
     insert_sample_data()
     return {"message": "Sample data inserted successfully"}
 
-@app.post("/patients/", response_model=Patient)
+@app.post("/patients/", response_model=PatientRead)
 async def create_patient(patient_data: PatientCreate, db: Session = Depends(get_db)):
-    # Convert PatientCreate to Patient for database insertion
-    patient = Patient(**patient_data.dict(exclude_unset=True))
-    db.add(patient)
-    db.commit()
-    db.refresh(patient)
-    return patient
-
-# @app.get("/patients/", response_model=List[Patient])
-# def read_patients(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-#     patients = db.exec(select(Patient).offset(skip).limit(limit)).all()
-#     return patients
+    try:
+        patient = Patient(**patient_data.dict(exclude_unset=True))
+        db.add(patient)
+        db.commit()
+        db.refresh(patient)
+        return patient
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/patients/", response_class=HTMLResponse)
 async def read_patients(
@@ -86,7 +78,7 @@ async def read_patients(
         }
     )
 
-@app.get("/patients/{patient_id}", response_model=Patient)
+@app.get("/patients/{patient_id}", response_model=PatientRead)
 def read_patient(patient_id: int, db: Session = Depends(get_db)):
     patient = db.get(Patient, patient_id)
     if not patient:
@@ -94,44 +86,50 @@ def read_patient(patient_id: int, db: Session = Depends(get_db)):
     return patient
 
 # Insurance company endpoints
-@app.post("/insurance-companies/", response_model=InsuranceCompany)
+@app.post("/insurance-companies/", response_model=InsuranceCompanyRead)
 def create_insurance_company(insurance: InsuranceCompanyCreate, db: Session = Depends(get_db)):
-    db_insurance = InsuranceCompany.from_orm(insurance)
-    db.add(db_insurance)
-    db.commit()
-    db.refresh(db_insurance)
-    return db_insurance
+    try:
+        db_insurance = InsuranceCompany(**insurance.dict(exclude_unset=True))
+        db.add(db_insurance)
+        db.commit()
+        db.refresh(db_insurance)
+        return db_insurance
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/insurance-companies/", response_model=List[InsuranceCompany])
+@app.get("/insurance-companies/", response_model=List[InsuranceCompanyRead])
 def read_insurance_companies(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     insurance_companies = db.exec(select(InsuranceCompany).offset(skip).limit(limit)).all()
     return insurance_companies
 
 # Patient insurance endpoints
-@app.post("/patient-insurances/", response_model=PatientInsurance)
+@app.post("/patient-insurances/", response_model=PatientInsuranceRead)
 def create_patient_insurance(patient_insurance: PatientInsuranceCreate, db: Session = Depends(get_db)):
-    # Validate patient and insurance exist
-    patient = db.get(Patient, patient_insurance.patient_id)
-    insurance = db.get(InsuranceCompany, patient_insurance.insurance_id)
-    
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    if not insurance:
-        raise HTTPException(status_code=404, detail="Insurance company not found")
-    
-    db_patient_insurance = PatientInsurance.from_orm(patient_insurance)
-    db.add(db_patient_insurance)
-    db.commit()
-    db.refresh(db_patient_insurance)
-    return db_patient_insurance
+    try:
+        # Validate patient and insurance exist
+        patient = db.get(Patient, patient_insurance.patient_id)
+        insurance = db.get(InsuranceCompany, patient_insurance.insurance_id)
+        
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        if not insurance:
+            raise HTTPException(status_code=404, detail="Insurance company not found")
+        
+        db_patient_insurance = PatientInsurance(**patient_insurance.dict(exclude_unset=True))
+        db.add(db_patient_insurance)
+        db.commit()
+        db.refresh(db_patient_insurance)
+        return db_patient_insurance
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/patient-insurances/by-patient/{patient_id}", response_model=List[PatientInsurance])
+@app.get("/patient-insurances/by-patient/{patient_id}", response_model=List[PatientInsuranceRead])
 def read_patient_insurances(patient_id: int, db: Session = Depends(get_db)):
     insurances = db.exec(select(PatientInsurance).where(PatientInsurance.patient_id == patient_id)).all()
     return insurances
 
 # Authentication endpoints
-@app.post("/register", response_model=User)
+@app.post("/register", response_model=UserRead)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = get_user(db, email=user.email)
     if db_user:
@@ -168,7 +166,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 async def read_welcome(current_user: User = Depends(get_current_user)):
     return {"message": f"Welcome {current_user.email}! Role: {current_user.role}"}
 
-@app.get("/users/me", response_model=User)
+@app.get("/users/me", response_model=UserRead)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
@@ -179,7 +177,6 @@ async def read_index(request: Request):
 # Ready to Bill route
 @app.get("/ready-to-bill/", response_class=HTMLResponse)
 async def read_ready_to_bill(request: Request, db: Session = Depends(get_db)):
-    # Placeholder: Filter patients (e.g., IDs < 1000)
     patients = db.exec(select(Patient).where(Patient.patient_id < 1000)).all()
     return templates.TemplateResponse(
         "patient_list.html",
@@ -189,7 +186,6 @@ async def read_ready_to_bill(request: Request, db: Session = Depends(get_db)):
 # Ready to Schedule route
 @app.get("/ready-to-schedule/", response_class=HTMLResponse)
 async def read_ready_to_schedule(request: Request, db: Session = Depends(get_db)):
-    # Placeholder: Filter patients (e.g., IDs between 1000 and 2000)
     patients = db.exec(select(Patient).where(Patient.patient_id.between(1000, 2000))).all()
     return templates.TemplateResponse(
         "patient_list.html",
@@ -199,7 +195,6 @@ async def read_ready_to_schedule(request: Request, db: Session = Depends(get_db)
 # Ready to Confirm route
 @app.get("/ready-to-confirm/", response_class=HTMLResponse)
 async def read_ready_to_confirm(request: Request, db: Session = Depends(get_db)):
-    # Placeholder: Filter patients (e.g., IDs between 2000 and 3000)
     patients = db.exec(select(Patient).where(Patient.patient_id.between(2000, 3000))).all()
     return templates.TemplateResponse(
         "patient_list.html",
@@ -209,7 +204,6 @@ async def read_ready_to_confirm(request: Request, db: Session = Depends(get_db))
 # Ready to Report route
 @app.get("/ready-to-report/", response_class=HTMLResponse)
 async def read_ready_to_report(request: Request, db: Session = Depends(get_db)):
-    # Placeholder: Filter patients (e.g., IDs between 3000 and 4000)
     patients = db.exec(select(Patient).where(Patient.patient_id.between(3000, 4000))).all()
     return templates.TemplateResponse(
         "patient_list.html",
@@ -219,16 +213,17 @@ async def read_ready_to_report(request: Request, db: Session = Depends(get_db)):
 # Ready to View route
 @app.get("/ready-to-view/", response_class=HTMLResponse)
 async def read_ready_to_view(request: Request, db: Session = Depends(get_db)):
-    # Placeholder: Filter patients (e.g., IDs > 4000)
     patients = db.exec(select(Patient).where(Patient.patient_id > 4000)).all()
     return templates.TemplateResponse(
         "patient_list.html",
         {"request": request, "patients": patients, "status_filter": "ready-to-view"}
     )
+
 # Sync Google Drive route
 @app.get("/sync-drive", response_class=HTMLResponse)
 async def sync_drive(request: Request, filter_name: str = "patient"):
     try:
+        from google_drive_service import get_drive_service  # Import here to avoid startup issues
         service = get_drive_service()
         # Query files with name filter
         query = f"'{filter_name}' in name"
@@ -303,23 +298,7 @@ async def upload_appointments(
                 "error": str(e)
             }
         )
-@app.get("/patients/", response_class=HTMLResponse)
-async def read_patients(
-    request: Request,
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db)
-):
-    patients = db.exec(select(Patient).offset(skip).limit(limit)).all()
-    return templates.TemplateResponse(
-        "all-patients.html",
-        {
-            "request": request,
-            "patients": patients,
-            "skip": skip,
-            "limit": limit
-        }
-    )
+
 @app.get("/appointments/", response_class=HTMLResponse)
 async def read_appointments(
     request: Request,
@@ -338,3 +317,51 @@ async def read_appointments(
             "limit": limit
         }
     )
+
+# Location endpoints
+@app.post("/locations/", response_model=LocationRead)
+def create_location(location: LocationCreate, db: Session = Depends(get_db)):
+    try:
+        db_location = Location(**location.dict(exclude_unset=True))
+        db.add(db_location)
+        db.commit()
+        db.refresh(db_location)
+        return db_location
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/locations/", response_model=List[LocationRead])
+def read_locations(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    locations = db.exec(select(Location).offset(skip).limit(limit)).all()
+    return locations
+
+# Appointment endpoints
+@app.post("/appointments/", response_model=AppointmentRead)
+def create_appointment(appointment: AppointmentCreate, db: Session = Depends(get_db)):
+    try:
+        # Validate related entities exist
+        patient = db.get(Patient, appointment.patient_id)
+        provider = db.get(Provider, appointment.provider_id)
+        location = db.get(Location, appointment.location_id)
+        
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider not found")
+        if not location:
+            raise HTTPException(status_code=404, detail="Location not found")
+        
+        db_appointment = Appointment(**appointment.dict(exclude_unset=True))
+        db.add(db_appointment)
+        db.commit()
+        db.refresh(db_appointment)
+        return db_appointment
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/appointments/{appointment_id}", response_model=AppointmentRead)
+def read_appointment(appointment_id: int, db: Session = Depends(get_db)):
+    appointment = db.get(Appointment, appointment_id)
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    return appointment
