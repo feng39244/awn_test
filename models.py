@@ -16,24 +16,29 @@ class TimeStampMixin:
     created_at: Optional[datetime] = Field(default=None)
     updated_at: Optional[datetime] = Field(default=None)
 
+from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional, List
+from datetime import datetime, date
+from pydantic import EmailStr
+
 class Patient(SQLModel, table=True):
     __tablename__ = "patients"
     
-    patient_id: Optional[int] = Field(default=None, primary_key=True)
-    first_name: str = Field(...)
-    middle_name: Optional[str] = None
-    last_name: str = Field(...)
-    date_of_birth: Optional[date] = None
-    gender: Optional[str] = None  # Consider adding gender_identity if needed
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    zipcode: Optional[str] = None
-    phone: Optional[str] = None
-    email: Optional[EmailStr] = None
-    client_number: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.now)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.now)
+    patient_id: Optional[int] = Field(default=None, primary_key=True)  # Optional, auto-incremented
+    first_name: str = Field(...)  # Required
+    middle_name: Optional[str] = None  # Optional
+    last_name: str = Field(...)  # Required
+    date_of_birth: Optional[date] = None  # Optional
+    gender: Optional[str] = None  # Optional
+    address: Optional[str] = None  # Optional
+    city: Optional[str] = None  # Optional
+    state: Optional[str] = None  # Optional
+    zipcode: Optional[str] = None  # Optional
+    phone: Optional[str] = None  # Optional
+    email: Optional[EmailStr] = None  # Optional
+    client_number: Optional[str] = None  # Optional
+    created_at: Optional[datetime] = Field(default_factory=datetime.now)  # Optional with default
+    updated_at: Optional[datetime] = Field(default_factory=datetime.now)  # Optional with default
 
     # Relationships
     insurances: List["PatientInsurance"] = Relationship(back_populates="patient")
@@ -87,16 +92,17 @@ class Provider(SQLModel, TimeStampMixin, table=True):
     __tablename__ = "providers"
     
     provider_id: Optional[int] = Field(default=None, primary_key=True)
-    first_name: str
+    name: str = Field(unique=True)  # Required field with unique constraint
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     middle_name: Optional[str] = None
-    last_name: str
     credentials: Optional[str] = None
-    npi: str = Field(unique=True)
+    npi: Optional[str] = None
     ein: Optional[str] = None
-    address: str
-    city: str
-    state: str
-    zipcode: str
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zipcode: Optional[str] = None
     phone: Optional[str] = None
     taxonomy_code: Optional[str] = None
     
@@ -221,27 +227,23 @@ class Appointment(SQLModel, TimeStampMixin, table=True):
     practitioner_id: int = Field(foreign_key="providers.provider_id")
     location_id: int = Field(foreign_key="locations.location_id")
     
-    # Appointment time details
     appointment_datetime: datetime
-    end_time: time
+    end_time: Optional[time] = None  # Made optional
     
-    # Appointment metadata
-    appointment_type: str
+    appointment_type: str = "Unknown"  # Added default
     appointment_subtype: Optional[str] = None
     invoice_number: Optional[str] = None
     notes: Optional[str] = None
     flag: Optional[str] = None
     status: str = "Pending"
     
-    # Other fields
     client_type: Optional[str] = None
     sex: Optional[str] = None
     gender_identity: Optional[str] = None
     
-    # Relationships
-    patient: Patient = Relationship(back_populates="appointments")
-    practitioner: Provider = Relationship(back_populates="appointments")
-    location: Location = Relationship(back_populates="appointments")  # Fixed here
+    patient: "Patient" = Relationship(back_populates="appointments")
+    practitioner: "Provider" = Relationship(back_populates="appointments")
+    location: "Location" = Relationship(back_populates="appointments")
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

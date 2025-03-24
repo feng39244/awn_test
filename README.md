@@ -66,6 +66,7 @@ The application uses a simple User table with the following columns:
 
 5. Run database migrations:
    ```
+   alembic revision --autogenerate -m "database update"
    alembic upgrade head
    ```
 

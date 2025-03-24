@@ -45,35 +45,14 @@ sync_engine = create_engine(DATABASE_URL)
 def init_db_sync():
     SQLModel.metadata.create_all(sync_engine)
 
-def get_or_create_patient(
-    session,
-    client_name,
-    client_number,
-    mobile,
-    sex,
-    gender_identity,
-    postcode,
-    state
-):
-    """Get or create a patient record."""
-    # Parse first and last name from client_name
-    name_parts = client_name.split()
-    first_name = name_parts[0] if name_parts else ""
-    last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
-    
-    # Check if patient exists by client number
-    if client_number:
-        existing_patient = session.exec(
-            select(Patient).where(Patient.client_number == client_number)
-        ).first()
-        
-        if existing_patient:
-            return existing_patient
-    
-    # Create new patient
+def get_or_create_patient(session, client_name, client_number, mobile, sex, gender_identity, postcode, state):
+    patient = session.query(Patient).filter(Patient.client_number == client_number).first()
+    if patient:
+        print(f"Found patient with patient_id={patient.patient_id}")
+        return patient
     patient = Patient(
-        first_name=first_name,
-        last_name=last_name,
+        first_name=client_name.split()[0] if client_name else "Unknown",
+        last_name=client_name.split()[-1] if client_name and len(client_name.split()) > 1 else None,
         client_number=client_number,
         mobile=mobile,
         sex=sex,
@@ -83,86 +62,100 @@ def get_or_create_patient(
         created_at=datetime.now(),
         updated_at=datetime.now()
     )
-    
     session.add(patient)
-    session.flush()  # Get the ID without committing
-    
+    session.flush()
+    print(f"Created patient with patient_id={patient.patient_id}")
     return patient
 
-def get_or_create_provider(
-    session,
-    practitioner_code
-):
-    """Get or create a provider record."""
-    # Check if provider exists
-    existing_provider = session.exec(
-        select(Provider).where(Provider.provider_code == practitioner_code)
-    ).first()
-    
-    if existing_provider:
-        return existing_provider
-    
-    # Create new provider
-    provider = Provider(
-        provider_code=practitioner_code,
-        first_name="Unknown",  # Placeholder
-        last_name="Provider",  # Placeholder
-        created_at=datetime.now(),
-        updated_at=datetime.now()
-    )
-    
-    session.add(provider)
-    session.flush()  # Get the ID without committing
-    
-    return provider
+def get_or_create_provider(session, name):
+    try:
+        print(f"Searching for provider with name: {name}")
+        print(f"Session: {session}")
+        print(f"Provider class: {Provider}")
+        query = session.query(Provider)
+        print(f"Query object: {query}")
+        provider = query.filter(Provider.name == name).first()  # Breakpoint here
+        if provider:
+            print(f"Found existing provider: {provider.name}, ID: {provider.provider_id}")
+            return provider
+        print(f"No existing provider found for name: {name}")
+        provider = Provider(name=name, created_at=datetime.now(), updated_at=datetime.now())
+        session.add(provider)
+        session.flush()
+        print(f"Created new provider: {provider.name}, ID: {provider.provider_id}")
+        return provider
+    except AttributeError as ae:
+        print(f"Attribute Error occurred: {str(ae)}")
+        print("Possible issues: session or Provider class might not be properly defined")
+        raise
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        raise
 
-def get_or_create_location(
-    session,
-    location_name
-):
-    """Get or create a location record."""
-    # Check if location exists
-    existing_location = session.exec(
-        select(Location).where(Location.name == location_name)
-    ).first()
-    
-    if existing_location:
-        return existing_location
-    
-    # Create new location
-    location = Location(
-        name=location_name,
-        created_at=datetime.now(),
-        updated_at=datetime.now()
-    )
-    
-    session.add(location)
-    session.flush()  # Get the ID without committing
-    
-    return location
+def get_or_create_location(session, location_name):
+    try:
+        print(f"Searching for location with name: {location_name}")
+        print(f"Session: {session}")
+        print(f"Location class: {Location}")
+        query = session.query(Location)
+        print(f"Query object: {query}")
+        location = query.filter(Location.name == location_name).first()
+        if location:
+            print(f"Found existing location: {location.name}, ID: {location.location_id}")
+            return location
+        print(f"No existing location found for name: {location_name}")
+        location = Location(name=location_name, created_at=datetime.now(), updated_at=datetime.now())
+        session.add(location)
+        session.flush()
+        print(f"Created new location: {location.name}, ID: {location.location_id}")
+        return location
+    except AttributeError as ae:
+        print(f"Attribute Error occurred: {str(ae)}")
+        print("Possible issues: session or Location class might not be properly defined")
+        raise
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        raise
 
-def parse_datetime(date_str):
-    """Parse date string into datetime object."""
+def parse_datetime(date_str: str) -> datetime:
+    """Parse a date string into a datetime object.
+
+    Args:
+        date_str: The date string to parse (e.g., "31/12/2023", "2023-12-31 14:30:00").
+
+    Returns:
+        A datetime object. Returns datetime.now() if parsing fails.
+    """
     if not date_str:
-        return None
-    
-    # Try different date formats
+        print(f"parse_datetime: Empty date string, using default: {datetime.now()}")
+        return datetime.now()
+
+    # Try different date and date-time formats
     formats = [
-        "%d/%m/%Y",  # 31/12/2023
-        "%Y-%m-%d",  # 2023-12-31
-        "%d-%m-%Y",  # 31-12-2023
-        "%m/%d/%Y",  # 12/31/2023
-        "%d %b %Y",  # 31 Dec 2023
-        "%d %B %Y",  # 31 December 2023
+        "%m/%d/%Y %I:%M %p",  # 3/08/2025 11:00 AM (your CSV format)
+        "%d/%m/%Y",           # 31/12/2023
+        "%Y-%m-%d",           # 2023-12-31
+        "%d-%m-%Y",           # 31-12-2023
+        "%m/%d/%Y",           # 12/31/2023
+        "%d %b %Y",           # 31 Dec 2023
+        "%d %B %Y",           # 31 December 2023
+        "%d/%m/%Y %H:%M:%S",  # 31/12/2023 14:30:00
+        "%Y-%m-%d %H:%M:%S",  # 2023-12-31 14:30:00
+        "%d-%m-%Y %H:%M:%S",  # 31-12-2023 14:30:00
+        "%m/%d/%Y %H:%M:%S",  # 12/31/2023 14:30:00
+        "%d %b %Y %H:%M:%S",  # 31 Dec 2023 14:30:00
+        "%d %B %Y %H:%M:%S",  # 31 December 2023 14:30:00
     ]
-    
+
     for fmt in formats:
         try:
-            return datetime.strptime(date_str.strip(), fmt)
+            return datetime.strptime(date_str, fmt)
         except ValueError:
-            continue
-    
-    return None
+            continue  # Try the next format
+
+    print(f"parse_datetime: Failed to parse date '{date_str}', using default: {datetime.now()}")
+    return datetime.now()
+
 
 def parse_time(time_str):
     """Parse time string into datetime.time object."""
@@ -179,100 +172,14 @@ def parse_time(time_str):
     
     for fmt in formats:
         try:
-            time_obj = datetime.strptime(time_str.strip(), fmt).time()
-            return time_obj
+            
+            dt = datetime.strptime(fmt, "%H:%M:%S")  # Adjust format as needed
+            return dt.time()
         except ValueError:
             continue
     
     return None
 
-@router.post("/appointments/csv", status_code=status.HTTP_201_CREATED)
-def import_appointments_from_csv(
-    file: UploadFile = File(...),
-    session: AsyncSession = Depends(get_session)
-):
-        """Import appointments from CSV file."""
-        if not file.filename.endswith('.csv'):
-            raise ValueError("Invalid file format. Please upload a CSV file.")
-        
-        contents = file.read()
-        buffer = io.StringIO(contents.decode('utf-8-sig'))  # Handle potential BOM
-        reader = csv.DictReader(buffer)
-        
-        # Track stats
-        stats = {
-            "total_processed": 0,
-            "created": 0,
-            "errors": 0,
-            "error_details": []
-        }
-        
-        for row in reader:
-            try:
-                stats["total_processed"] += 1
-                
-                # Get or create patient
-                patient = get_or_create_patient(
-                    session=session,
-                    client_name=row.get("Client", ""),
-                    client_number=row.get("Client Number", ""),
-                    mobile=row.get("Mobile", ""),
-                    sex=row.get("Sex", ""),
-                    gender_identity=row.get("Gender Identity", ""),
-                    postcode=row.get("Postcode", ""),
-                    state=row.get("State", "")
-                )
-                
-                # Get or create provider
-                provider = get_or_create_provider(
-                    session=session,
-                    practitioner_code=row.get("Practitioner", "")
-                )
-                
-                # Get or create location
-                location = get_or_create_location(
-                    session=session,
-                    name=row.get("Location", "")
-                )
-                
-                # Parse appointment date and time
-                appointment_datetime = parse_datetime(row.get("Date", ""))
-                end_time = parse_time(row.get("End Time", ""))
-                
-                # Create appointment
-                appointment = Appointment(
-                    patient_id=patient.patient_id,
-                    practitioner_id=provider.provider_id,
-                    location_id=location.location_id,
-                    appointment_datetime=appointment_datetime,
-                    end_time=end_time,
-                    appointment_type=row.get("Appointment Type", ""),
-                    appointment_subtype=row.get("Type", ""),  # Using the "Type" field for subtype
-                    invoice_number=row.get("Invoice", ""),
-                    notes=row.get("Appointment Notes", ""),
-                    flag=row.get("Appointment Flag", ""),
-                    status=row.get("Status", "Pending"),
-                    client_type=row.get("Type", ""),
-                    sex=row.get("Sex", ""),
-                    gender_identity=row.get("Gender Identity", ""),
-                    created_at=datetime.now(),
-                    updated_at=datetime.now()
-                )
-                
-                session.add(appointment)
-                stats["created"] += 1
-                
-            except Exception as e:
-                stats["errors"] += 1
-                stats["error_details"].append({
-                    "row": stats["total_processed"],
-                    "error": str(e)
-                })
-        
-        # Commit all changes at the end
-        session.commit()
-        
-        return stats
 
 def process_csv_file(file_path: str):
     """Process a CSV file using the import function."""

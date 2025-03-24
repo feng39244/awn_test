@@ -104,7 +104,7 @@
                         </td>
                         <td>
                             {% if appointment.practitioner %}
-                                {{ appointment.practitioner.first_name }} {{ appointment.practitioner.last_name }}
+                                {{ appointment.practitioner.name }} {{ appointment.practitioner.last_name }}
                             {% else %}
                                 Unknown Provider
                             {% endif %}

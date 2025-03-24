@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
+from datetime import time
 from typing import List
 from datetime import datetime, timedelta
 
@@ -321,22 +322,36 @@ async def upload_appointments(
                     postcode=row.get("Postcode", ""),
                     state=row.get("State", "")
                 )
-                
+                if patient is None:  # Shouldn’t happen with current logic, but good practice
+                    raise ValueError(f"Failed to get or create provider for name: {row.get('patient', '')}")
+                print(f"finished checking patient {patient}, patient_id={patient.patient_id}")
+                print('row.get("Practitioner", ""):', row.get("Practitioner", ""))
                 # Get or create provider
                 provider = appointment_service.get_or_create_provider(
                     session=db,
-                    practitioner_code=row.get("Practitioner", "")
+                    name=row.get("Practitioner", "")
                 )
-                
+                if provider is None:  # Shouldn’t happen with current logic, but good practice
+                    raise ValueError(f"Failed to get or create provider for name: {row.get('Practitioner', '')}")
+                print(f"finished checking provider {provider}")
+
                 # Get or create location
                 location = appointment_service.get_or_create_location(
                     session=db,
                     location_name=row.get("Location", "")
                 )
-                
+                if location is None:  # Shouldn’t happen with current logic, but good practice
+                    raise ValueError(f"Failed to get or create provider for name: {row.get('location', '')}")
+                print(f"finished checking location", location)
                 # Parse appointment date and time
-                appointment_datetime = appointment_service.parse_datetime(row.get("Date", ""))
-                end_time = appointment_service.parse_time(row.get("End Time", ""))
+                
+
+                parsed_datetime = appointment_service.parse_datetime(row.get("Date", ""))
+                print(f"Parsed datetime: {parsed_datetime}")
+                appointment_datetime = parsed_datetime or datetime.now()
+                print(f"Final appointment_datetime: {appointment_datetime}")
+                end_time = appointment_service.parse_time(row.get("End Time", "")) or time(0, 0)
+                appointment_type = row.get("Appointment Type", "Unknown")
                 
                 # Create appointment
                 appointment = Appointment(
@@ -360,8 +375,10 @@ async def upload_appointments(
                 
                 db.add(appointment)
                 stats["created"] += 1
+                print(f"finished checking appointment", appointment)
                 
             except Exception as e:
+                print(f"Error at row {stats['total_processed']}: {str(e)}")
                 stats["errors"] += 1
                 stats["error_details"].append({
                     "row": stats["total_processed"],
