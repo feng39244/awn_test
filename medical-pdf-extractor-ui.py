@@ -3,7 +3,6 @@ import pandas as pd
 import re
 import logging
 import os
-import pikepdf
 import io
 from typing import Dict, List, Optional
 from gradio_pdf import PDF
@@ -22,24 +21,38 @@ class MedicalPDFExtractor:
         # Default key extraction patterns
         self.default_patterns = {
             'patient_name': [
-                r'Patient Name[:\s]*([^\n]+)',
-                r'Name[:\s]*([^\n]+)',
-                r'Patient\s*[Nn]ame\s*[:]*\s*([^\n]+)',
+                r'Legal\s*Name\s*[:]*\s*([^\n:]+)',
+                r'Patient\s*Name\s*[:]*\s*([^\n:]+)',
+                r'Name\s*[:]*\s*([^\n:]+)',
             ],
             'claim_number': [
-                r'Claim\s*Number[:\s]*(\w+)',
-                r'Authorization\s*Number[:\s]*(\w+)',
-                r'Reference\s*Number[:\s]*(\w+)',
+                r'Claim\s*Number\s*[:]*\s*(\S+)',
+                r'Claim\s*#\s*[:]*\s*(\S+)',
             ],
             'date_of_service': [
-                r'Date\s*of\s*Service[:\s]*(\d{1,2}/\d{1,2}/\d{2,4})',
-                r'DOS[:\s]*(\d{1,2}/\d{1,2}/\d{2,4})',
-                r'Service\s*Date[:\s]*(\d{1,2}/\d{1,2}/\d{2,4})',
+                r'Electronically\s*signed\s*by:.*\n.*\n(\d{1,2}/\d{1,2}/\d{4})',
+                r'Date\s*of\s*Service\s*[:]*\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'provider_name': [
-                r'Provider\s*Name[:\s]*([^\n]+)',
-                r'Healthcare\s*Provider[:\s]*([^\n]+)',
-                r'Physician\s*Name[:\s]*([^\n]+)',
+            'date_of_birth': [
+                r'Date\s*of\s*Birth\s*[:]*\s*(\d{1,2}/\d{1,2}/\d{4})',
+                r'DOB\s*[:]*\s*(\d{1,2}/\d{1,2}/\d{4})',
+            ],
+            'authorized_sessions': [
+                r'(\d+)\s*session',
+                r'Massage\s*Therapy\s*.*?(\d+)\s*session',
+                r'Authorized\s*Sessions\s*[:]*\s*(\d+)',
+            ],
+            'insurance_provider': [
+                r'Carrier\s*Name\s*[:]*\s*([^\n:]+)',
+                r'Insurance\s*Provider\s*[:]*\s*([^\n:]+)',
+            ],
+            'diagnosis_code': [
+                r'DIAGNOSIS\s*ICD-CODE\s*\n\s*(\w+\.\d+)',
+                r'Diagnosis\s*Code\s*[:]*\s*(\w+\.\d+)',
+            ],
+            'authorization_status': [
+                r'Notification\s*for\s*Pre-Authorized\s*Services',
+                r'Authorization\s*Status\s*[:]*\s*([^\n:]+)',
             ]
         }
         
@@ -76,7 +89,7 @@ class MedicalPDFExtractor:
 
     def extract_key_information(self, pdf_path: str) -> Dict[str, Optional[str]]:
         """
-        Extract key information from PDF using regex patterns
+        Extract key information from PDF using regex patterns with enhanced debugging
         
         :param pdf_path: Path to the PDF file
         :return: Dictionary of extracted information
@@ -87,15 +100,26 @@ class MedicalPDFExtractor:
         # Extract information using patterns
         extracted_info = {}
         for key, patterns in self.key_patterns.items():
+            extracted_info[key] = None
             for pattern in patterns:
-                match = re.search(pattern, full_text, re.IGNORECASE | re.MULTILINE)
-                if match:
-                    extracted_info[key] = match.group(1).strip()
-                    break
-            else:
-                extracted_info[key] = None
+                try:
+                    match = re.search(pattern, full_text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+                    if match:
+                        # Try to get the first capturing group, or the entire match if no groups
+                        extracted_value = match.group(1) if match.groups() else match.group(0)
+                        extracted_info[key] = extracted_value.strip()
+                        print(f"Matched {key} with pattern: {pattern}")
+                        break
+                except Exception as e:
+                    print(f"Error matching {key} with pattern {pattern}: {e}")
+        
+        # Additional debugging: print full text if no matches found
+        if all(value is None for value in extracted_info.values()):
+            print("No matches found. Full PDF text:")
+            print(full_text)
         
         return extracted_info
+
 def create_pdf_extractor_app():
     """
     Create Gradio app for PDF information extraction
@@ -197,7 +221,8 @@ def create_pdf_extractor_app():
         """)
 
     return demo
+
 # Launch the app
 if __name__ == "__main__":
     demo = create_pdf_extractor_app()
-    demo.launch(debug=True)
+    demo.launch(debug=True, share=True)
