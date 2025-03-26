@@ -1,8 +1,14 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from io import StringIO
+from io import StringIO, BytesIO
 from datetime import datetime
-from appointment_service import process_uploaded_appointments
+import sys
+import os
+
+# Add the parent directory to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from appointment_service import process_uploaded_appointments, delete_appointment
 from models import Patient, Provider, Location, Appointment
 
 @pytest.fixture
@@ -22,7 +28,8 @@ Jane Smith,67890,555-4567,Female,Female,67890,CA,Dr. Jones,Branch Clinic,3/09/20
 def mock_upload_file(sample_csv_content):
     class MockUploadFile:
         def __init__(self, content):
-            self.file = StringIO(content)
+            # Convert string content to bytes
+            self.file = BytesIO(content.encode('utf-8'))
             self.filename = "test.csv"
 
     return MockUploadFile(sample_csv_content)
@@ -75,9 +82,10 @@ def test_process_uploaded_appointments_success(mock_session, mock_upload_file):
 
 def test_process_uploaded_appointments_invalid_csv(mock_session):
     # Arrange
-    invalid_csv = "Invalid,CSV,Content\nMissing,Fields"
+    invalid_csv = """Client,Client Number,Mobile,Sex,Gender Identity,Postcode,State,Practitioner,Location,Date,End Time,Appointment Type,Type,Invoice,Appointment Notes,Appointment Flag,Status
+,,,,,,,,,,,,,,,"""  # Empty values for all fields
     mock_file = Mock()
-    mock_file.file = StringIO(invalid_csv)
+    mock_file.file = BytesIO(invalid_csv.encode('utf-8'))
     mock_file.filename = "test.csv"
 
     # Act
@@ -87,13 +95,14 @@ def test_process_uploaded_appointments_invalid_csv(mock_session):
     assert result["total_processed"] == 1
     assert result["created"] == 0
     assert result["errors"] == 1
-    assert len(result["error_details"]) > 0
+    assert len(result["error_details"]) == 1
+    assert "Missing required fields" in result["error_details"][0]["error"]
 
 def test_process_uploaded_appointments_empty_file(mock_session):
     # Arrange
     empty_csv = ""
     mock_file = Mock()
-    mock_file.file = StringIO(empty_csv)
+    mock_file.file = BytesIO(empty_csv.encode('utf-8'))
     mock_file.filename = "test.csv"
 
     # Act
@@ -108,7 +117,7 @@ def test_process_uploaded_appointments_no_headers(mock_session, mock_upload_file
     # Arrange
     csv_content = '''John Doe,12345,555-0123,Male,Male,12345,NY,Dr. Smith,Main Clinic,3/08/2025 11:00 AM,12:00 PM,Initial,Regular,INV001,Test notes,None,Pending'''
     mock_file = Mock()
-    mock_file.file = StringIO(csv_content)
+    mock_file.file = BytesIO(csv_content.encode('utf-8'))
     mock_file.filename = "test.csv"
 
     mock_patient = Mock(patient_id=1)
@@ -157,7 +166,7 @@ def test_process_uploaded_appointments_invalid_date_format(mock_session):
 John Doe,12345,555-0123,Male,Male,12345,NY,Dr. Smith,Main Clinic,Invalid Date,12:00 PM,Initial,Regular,INV001,Test notes,None,Pending'''
     
     mock_file = Mock()
-    mock_file.file = StringIO(csv_content)
+    mock_file.file = BytesIO(csv_content.encode('utf-8'))
     mock_file.filename = "test.csv"
 
     mock_patient = Mock(patient_id=1)
@@ -183,7 +192,7 @@ def test_process_uploaded_appointments_missing_required_fields(mock_session):
 ,,,,,,,,,3/08/2025 11:00 AM,,,,,,'''
     
     mock_file = Mock()
-    mock_file.file = StringIO(csv_content)
+    mock_file.file = BytesIO(csv_content.encode('utf-8'))
     mock_file.filename = "test.csv"
 
     # Act
@@ -193,4 +202,60 @@ def test_process_uploaded_appointments_missing_required_fields(mock_session):
     assert result["total_processed"] == 1
     assert result["created"] == 0
     assert result["errors"] == 1
-    assert len(result["error_details"]) == 1 
+    assert len(result["error_details"]) == 1
+
+def test_delete_appointment_success(mock_session):
+    # Arrange
+    mock_appointment = Mock(appointment_id=1)
+    mock_session.query.return_value.filter.return_value.first.return_value = mock_appointment
+    mock_session.delete = MagicMock()
+    mock_session.commit = MagicMock()
+
+    # Act
+    result = delete_appointment(mock_session, 1)
+
+    # Assert
+    assert result is True
+    mock_session.query.assert_called_once_with(Appointment)
+    # Verify that filter was called with the correct condition
+    filter_call = mock_session.query.return_value.filter.call_args[0][0]
+    assert str(filter_call) == str(Appointment.appointment_id == 1)
+    mock_session.delete.assert_called_once_with(mock_appointment)
+    mock_session.commit.assert_called_once()
+
+def test_delete_appointment_not_found(mock_session):
+    # Arrange
+    mock_session.query.return_value.filter.return_value.first.return_value = None
+
+    # Act
+    result = delete_appointment(mock_session, 999)
+
+    # Assert
+    assert result is False
+    mock_session.query.assert_called_once_with(Appointment)
+    # Verify that filter was called with the correct condition
+    filter_call = mock_session.query.return_value.filter.call_args[0][0]
+    assert str(filter_call) == str(Appointment.appointment_id == 999)
+    mock_session.delete.assert_not_called()
+    mock_session.commit.assert_not_called()
+
+def test_delete_appointment_database_error(mock_session):
+    # Arrange
+    mock_appointment = Mock(appointment_id=1)
+    mock_session.query.return_value.filter.return_value.first.return_value = mock_appointment
+    mock_session.delete = MagicMock()
+    mock_session.commit.side_effect = Exception("Database error")
+    mock_session.rollback = MagicMock()
+
+    # Act
+    result = delete_appointment(mock_session, 1)
+
+    # Assert
+    assert result is False
+    mock_session.query.assert_called_once_with(Appointment)
+    # Verify that filter was called with the correct condition
+    filter_call = mock_session.query.return_value.filter.call_args[0][0]
+    assert str(filter_call) == str(Appointment.appointment_id == 1)
+    mock_session.delete.assert_called_once_with(mock_appointment)
+    mock_session.commit.assert_called_once()
+    mock_session.rollback.assert_called_once() 

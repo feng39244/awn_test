@@ -7,6 +7,43 @@ from decimal import Decimal
 from enum import Enum
 import re
 
+# Validation functions
+def validate_phone(phone: Optional[str]) -> Optional[str]:
+    if phone is None:
+        return None
+    # Remove any non-digit characters
+    phone_digits = re.sub(r'\D', '', phone)
+    if len(phone_digits) != 10:
+        raise ValueError("Phone number must be 10 digits")
+    return f"{phone_digits[:3]}-{phone_digits[3:6]}-{phone_digits[6:]}"
+
+def validate_zipcode(zipcode: Optional[str]) -> Optional[str]:
+    if zipcode is None:
+        return None
+    if not re.match(r'^\d{5}(-\d{4})?$', zipcode):
+        raise ValueError("Invalid zipcode format. Must be 5 digits or 5+4 digits")
+    return zipcode
+
+def validate_npi(npi: Optional[str]) -> Optional[str]:
+    if npi is None:
+        return None
+    if not re.match(r'^\d{10}$', npi):
+        raise ValueError("NPI must be 10 digits")
+    return npi
+
+def validate_state(state: Optional[str]) -> Optional[str]:
+    if state is None:
+        return None
+    valid_states = {'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 
+                   'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 
+                   'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 
+                   'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 
+                   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'}
+    state_upper = state.upper()
+    if state_upper not in valid_states:
+        raise ValueError("Invalid state code")
+    return state_upper
+
 # Enums for various status and type fields
 class Gender(str, Enum):
     MALE = "male"
@@ -36,6 +73,18 @@ class InsuranceRelationship(str, Enum):
     SELF = "self"
     SPOUSE = "spouse"
     CHILD = "child"
+    OTHER = "other"
+
+class AuthorizationStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    DENIED = "denied"
+    EXPIRED = "expired"
+
+class ServiceType(str, Enum):
+    PHYSICAL_THERAPY = "physical_therapy"
+    OCCUPATIONAL_THERAPY = "occupational_therapy"
+    SPEECH_THERAPY = "speech_therapy"
     OTHER = "other"
 
 # Schema Models for API requests
@@ -169,52 +218,15 @@ class AppointmentRead(AppointmentBase):
     updated_at: datetime
 
 # Base mixin for timestamps
-class TimeStampMixin(SQLModel):
+class TimeStampMixin:
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     def update_timestamp(self):
         self.updated_at = datetime.utcnow()
 
-# Validation functions
-def validate_phone(phone: Optional[str]) -> Optional[str]:
-    if phone is None:
-        return None
-    # Remove any non-digit characters
-    phone_digits = re.sub(r'\D', '', phone)
-    if len(phone_digits) != 10:
-        raise ValueError("Phone number must be 10 digits")
-    return f"{phone_digits[:3]}-{phone_digits[3:6]}-{phone_digits[6:]}"
-
-def validate_zipcode(zipcode: Optional[str]) -> Optional[str]:
-    if zipcode is None:
-        return None
-    if not re.match(r'^\d{5}(-\d{4})?$', zipcode):
-        raise ValueError("Invalid zipcode format. Must be 5 digits or 5+4 digits")
-    return zipcode
-
-def validate_npi(npi: Optional[str]) -> Optional[str]:
-    if npi is None:
-        return None
-    if not re.match(r'^\d{10}$', npi):
-        raise ValueError("NPI must be 10 digits")
-    return npi
-
-def validate_state(state: Optional[str]) -> Optional[str]:
-    if state is None:
-        return None
-    valid_states = {'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 
-                   'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 
-                   'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 
-                   'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 
-                   'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'}
-    state_upper = state.upper()
-    if state_upper not in valid_states:
-        raise ValueError("Invalid state code")
-    return state_upper
-
 # Define the schema models, separated from database models
-class Patient(SQLModel, TimeStampMixin, table=True):
+class Patient(SQLModel, table=True):
     __tablename__ = "patients"
     
     patient_id: Optional[int] = Field(default=None, primary_key=True)  # Optional, auto-incremented
@@ -230,18 +242,24 @@ class Patient(SQLModel, TimeStampMixin, table=True):
     phone: Optional[str] = None  # Optional
     email: Optional[EmailStr] = None  # Optional
     client_number: Optional[str] = Field(default=None, max_length=50, index=True)  # Optional
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Relationships
     insurances: List["PatientInsurance"] = Relationship(back_populates="patient")
     claims: List["Claim"] = Relationship(back_populates="patient")
     appointments: List["Appointment"] = Relationship(back_populates="patient")
+    authorizations: List["Authorization"] = Relationship(back_populates="patient")
 
     # Validators
     _validate_phone = validator('phone', allow_reuse=True)(validate_phone)
     _validate_zipcode = validator('zipcode', allow_reuse=True)(validate_zipcode)
     _validate_state = validator('state', allow_reuse=True)(validate_state)
 
-class InsuranceCompany(SQLModel, TimeStampMixin, table=True):
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class InsuranceCompany(SQLModel, table=True):
     __tablename__ = "insurance_companies"
     
     insurance_id: Optional[int] = Field(default=None, primary_key=True)
@@ -252,6 +270,8 @@ class InsuranceCompany(SQLModel, TimeStampMixin, table=True):
     zipcode: str  # Required
     phone: Optional[str] = None  # Optional
     payer_id: Optional[str] = Field(default=None, max_length=50, index=True)  # Optional
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationships
     patient_insurances: List["PatientInsurance"] = Relationship(back_populates="insurance")
@@ -261,7 +281,10 @@ class InsuranceCompany(SQLModel, TimeStampMixin, table=True):
     _validate_zipcode = validator('zipcode', allow_reuse=True)(validate_zipcode)
     _validate_state = validator('state', allow_reuse=True)(validate_state)
 
-class PatientInsurance(SQLModel, TimeStampMixin, table=True):
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class PatientInsurance(SQLModel, table=True):
     __tablename__ = "patient_insurance"
     
     patient_insurance_id: Optional[int] = Field(default=None, primary_key=True)
@@ -281,6 +304,8 @@ class PatientInsurance(SQLModel, TimeStampMixin, table=True):
     insured_zipcode: Optional[str] = None  # Optional
     insured_phone: Optional[str] = None  # Optional
     is_primary: bool = True  # Required
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationships
     patient: "Patient" = Relationship(back_populates="insurances")
@@ -292,7 +317,10 @@ class PatientInsurance(SQLModel, TimeStampMixin, table=True):
     _validate_zipcode = validator('insured_zipcode', allow_reuse=True)(validate_zipcode)
     _validate_state = validator('insured_state', allow_reuse=True)(validate_state)
 
-class Provider(SQLModel, TimeStampMixin, table=True):
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class Provider(SQLModel, table=True):
     __tablename__ = "providers"
     
     provider_id: Optional[int] = Field(default=None, primary_key=True)
@@ -309,6 +337,8 @@ class Provider(SQLModel, TimeStampMixin, table=True):
     zipcode: Optional[str] = None  # Optional
     phone: Optional[str] = None  # Optional
     taxonomy_code: Optional[str] = Field(default=None, max_length=10)  # Optional
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationships
     claims: List["Claim"] = Relationship(back_populates="provider")
@@ -317,6 +347,7 @@ class Provider(SQLModel, TimeStampMixin, table=True):
         sa_relationship_kwargs={"foreign_keys": "ServiceLine.rendering_provider_id"}
     )
     provider_appointments: List["Appointment"] = Relationship(back_populates="provider")
+    authorizations: List["Authorization"] = Relationship(back_populates="provider")
 
     # Validators
     _validate_phone = validator('phone', allow_reuse=True)(validate_phone)
@@ -324,28 +355,41 @@ class Provider(SQLModel, TimeStampMixin, table=True):
     _validate_state = validator('state', allow_reuse=True)(validate_state)
     _validate_npi = validator('npi', allow_reuse=True)(validate_npi)
 
-class DiagnosisCode(SQLModel, TimeStampMixin, table=True):
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class DiagnosisCode(SQLModel, table=True):
     __tablename__ = "diagnosis_codes"
     
     diagnosis_id: Optional[int] = Field(default=None, primary_key=True)
     code: str = Field(..., max_length=10, unique=True)  # Required
     description: str = Field(..., max_length=500)  # Required
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationships
     claim_diagnoses: List["ClaimDiagnosis"] = Relationship(back_populates="diagnosis")
 
-class ProcedureCode(SQLModel, TimeStampMixin, table=True):
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class ProcedureCode(SQLModel, table=True):
     __tablename__ = "procedure_codes"
     
     procedure_id: Optional[int] = Field(default=None, primary_key=True)
     code: str = Field(..., max_length=10, unique=True)  # Required
     description: str = Field(..., max_length=500)  # Required
     type: ProcedureType  # Required
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationships
     service_lines: List["ServiceLine"] = Relationship(back_populates="procedure")
 
-class Claim(SQLModel, TimeStampMixin, table=True):
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class Claim(SQLModel, table=True):
     __tablename__ = "claims"
     
     claim_id: Optional[int] = Field(default=None, primary_key=True)
@@ -360,6 +404,8 @@ class Claim(SQLModel, TimeStampMixin, table=True):
     referring_provider_npi: Optional[str] = None  # Optional
     total_charge: Decimal = Field(max_digits=10, decimal_places=2)  # Required
     status: ClaimStatus = Field(default=ClaimStatus.PENDING)  # Required
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationships
     patient: Patient = Relationship(back_populates="claims")
@@ -377,19 +423,27 @@ class Claim(SQLModel, TimeStampMixin, table=True):
 
     _validate_npi = validator('referring_provider_npi', allow_reuse=True)(validate_npi)
 
-class ClaimDiagnosis(SQLModel, TimeStampMixin, table=True):
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class ClaimDiagnosis(SQLModel, table=True):
     __tablename__ = "claim_diagnosis"
     
     claim_diagnosis_id: Optional[int] = Field(default=None, primary_key=True)
     claim_id: int = Field(foreign_key="claims.claim_id")  # Required
     diagnosis_id: int = Field(foreign_key="diagnosis_codes.diagnosis_id")  # Required
     diagnosis_pointer: int = Field(ge=1, le=12)  # 1-12 for position on form
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationships
     claim: Claim = Relationship(back_populates="diagnoses")
     diagnosis: DiagnosisCode = Relationship(back_populates="claim_diagnoses")
 
-class ServiceLine(SQLModel, TimeStampMixin, table=True):
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class ServiceLine(SQLModel, table=True):
     __tablename__ = "service_lines"
     
     service_line_id: Optional[int] = Field(default=None, primary_key=True)
@@ -402,12 +456,14 @@ class ServiceLine(SQLModel, TimeStampMixin, table=True):
     modifier_2: Optional[str] = Field(default=None, max_length=2)  # Optional
     modifier_3: Optional[str] = Field(default=None, max_length=2)  # Optional
     modifier_4: Optional[str] = Field(default=None, max_length=2)  # Optional
-    diagnosis_pointers: List[int] = Field(...)  # Changed from string to List[int]
+    diagnosis_pointers: str = Field(...)  # Store as JSON string
     charges: Decimal = Field(max_digits=10, decimal_places=2)  # Required
     units: int = Field(ge=1)  # Required
     rendering_provider_id: Optional[int] = Field(default=None, foreign_key="providers.provider_id")  # Optional
     epsdt_family_plan: Optional[str] = Field(default=None, max_length=1)  # Optional
     emergency: bool = False  # Required
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationships
     claim: Claim = Relationship(back_populates="service_lines")
@@ -426,9 +482,33 @@ class ServiceLine(SQLModel, TimeStampMixin, table=True):
 
     @validator('diagnosis_pointers')
     def validate_diagnosis_pointers(cls, v):
-        if not all(1 <= x <= 12 for x in v):
-            raise ValueError('All diagnosis pointers must be between 1 and 12')
-        return v
+        try:
+            # If it's already a string, try to parse it
+            if isinstance(v, str):
+                import json
+                pointers = json.loads(v)
+            else:
+                pointers = v
+                
+            if not isinstance(pointers, list):
+                raise ValueError('diagnosis_pointers must be a list')
+                
+            if not all(1 <= x <= 12 for x in pointers):
+                raise ValueError('All diagnosis pointers must be between 1 and 12')
+                
+            # If it was a list, convert to JSON string
+            if not isinstance(v, str):
+                import json
+                return json.dumps(pointers)
+                
+            return v
+        except json.JSONDecodeError:
+            raise ValueError('Invalid JSON format for diagnosis_pointers')
+        except Exception as e:
+            raise ValueError(f'Invalid diagnosis_pointers: {str(e)}')
+
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
 
 class LocationBase(SQLModel):
     name: str = Field(..., max_length=200)
@@ -451,7 +531,7 @@ class LocationRead(LocationBase):
     created_at: datetime
     updated_at: datetime
 
-class Location(SQLModel, TimeStampMixin, table=True):
+class Location(SQLModel, table=True):
     __tablename__ = "locations"
     
     location_id: Optional[int] = Field(default=None, primary_key=True)
@@ -461,6 +541,8 @@ class Location(SQLModel, TimeStampMixin, table=True):
     state: Optional[str] = Field(default=None, max_length=2)  # Optional
     zipcode: Optional[str] = None  # Optional
     phone: Optional[str] = None  # Optional
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationships
     appointments: List["Appointment"] = Relationship(back_populates="location")
@@ -470,7 +552,10 @@ class Location(SQLModel, TimeStampMixin, table=True):
     _validate_zipcode = validator('zipcode', allow_reuse=True)(validate_zipcode)
     _validate_state = validator('state', allow_reuse=True)(validate_state)
 
-class Appointment(SQLModel, TimeStampMixin, table=True):
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class Appointment(SQLModel, table=True):
     __tablename__ = "appointments"
     
     appointment_id: Optional[int] = Field(default=None, primary_key=True)
@@ -491,6 +576,8 @@ class Appointment(SQLModel, TimeStampMixin, table=True):
     client_type: Optional[str] = Field(default=None, max_length=50)  # Optional
     sex: Optional[Gender] = None  # Optional
     gender_identity: Optional[str] = Field(default=None, max_length=50)  # Optional
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     patient: Patient = Relationship(back_populates="appointments")
     provider: Provider = Relationship(back_populates="provider_appointments")
@@ -504,3 +591,46 @@ class Appointment(SQLModel, TimeStampMixin, table=True):
             if v <= appointment_time:
                 raise ValueError('end_time must be after appointment_datetime')
         return v
+
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()
+
+class AuthorizationBase(SQLModel):
+    patient_id: int
+    provider_id: int
+    claim_number: str = Field(..., max_length=50)
+    num_authorized_visits: int = Field(..., ge=1)
+    service_type: ServiceType
+    initial_evaluation_date: date
+    status: AuthorizationStatus = Field(default=AuthorizationStatus.PENDING)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+class AuthorizationCreate(AuthorizationBase):
+    pass
+
+class AuthorizationRead(AuthorizationBase):
+    authorization_id: int
+    created_at: datetime
+    updated_at: datetime
+
+class Authorization(SQLModel, table=True):
+    __tablename__ = "authorizations"
+    
+    authorization_id: Optional[int] = Field(default=None, primary_key=True)
+    patient_id: int = Field(foreign_key="patients.patient_id")
+    provider_id: int = Field(foreign_key="providers.provider_id")
+    claim_number: str = Field(..., max_length=50)
+    num_authorized_visits: int = Field(..., ge=1)
+    service_type: ServiceType
+    initial_evaluation_date: date
+    status: AuthorizationStatus = Field(default=AuthorizationStatus.PENDING)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Relationships
+    patient: Patient = Relationship(back_populates="authorizations")
+    provider: Provider = Relationship(back_populates="authorizations")
+
+    def update_timestamp(self):
+        self.updated_at = datetime.utcnow()

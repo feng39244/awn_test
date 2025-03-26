@@ -22,7 +22,8 @@ from models import (
     Provider, DiagnosisCode, ProcedureCode, Claim, ServiceLine,
     UserCreate, UserRead, Token, TokenData,
     Gender, AppointmentStatus, ClaimStatus,
-    Location, LocationCreate, LocationRead
+    Location, LocationCreate, LocationRead,
+    Authorization
 )
 from seed import insert_sample_data
 import appointment_service
@@ -365,3 +366,52 @@ def read_appointment(appointment_id: int, db: Session = Depends(get_db)):
     if not appointment:
         raise HTTPException(status_code=404, detail="Appointment not found")
     return appointment
+
+@app.delete("/appointments/{appointment_id}", response_model=dict)
+def delete_appointment_endpoint(appointment_id: int, session: Session = Depends(get_db)):
+    """
+    Delete an appointment by ID.
+    
+    Args:
+        appointment_id: ID of the appointment to delete
+        session: Database session
+        
+    Returns:
+        dict: Success/failure message
+    """
+    success = delete_appointment(session, appointment_id)
+    if success:
+        return {"message": "Appointment deleted successfully"}
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Appointment not found or could not be deleted"
+    )
+
+@app.get("/authorizations", response_class=HTMLResponse)
+async def list_authorizations(request: Request, session: Session = Depends(get_db)):
+    """List all authorizations."""
+    authorizations = session.query(Authorization).all()
+    return templates.TemplateResponse(
+        "all_authorization.html",
+        {"request": request, "authorizations": authorizations}
+    )
+
+@app.delete("/authorizations/{authorization_id}", response_model=dict)
+def delete_authorization_endpoint(authorization_id: int, session: Session = Depends(get_db)):
+    """
+    Delete an authorization by ID.
+    
+    Args:
+        authorization_id: ID of the authorization to delete
+        session: Database session
+        
+    Returns:
+        dict: Success/failure message
+    """
+    success = delete_authorization(session, authorization_id)
+    if success:
+        return {"message": "Authorization deleted successfully"}
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Authorization not found or could not be deleted"
+    )

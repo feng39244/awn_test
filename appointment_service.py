@@ -12,7 +12,7 @@ import asyncio
 import sys
 import os
 from sqlmodel import SQLModel, Session, create_engine
-from models import Patient, Provider, Location, Appointment, SQLModel
+from models import Patient, Provider, Location, Appointment, SQLModel, Authorization
 from dotenv import load_dotenv
 import os
 
@@ -203,6 +203,8 @@ def process_uploaded_appointments(file: UploadFile, has_headers: bool, session: 
     try:
         # Read the CSV file content
         contents = file.file.read()
+        if not contents:
+            return stats
 
         # Decode and parse CSV
         decoded_content = contents.decode('utf-8-sig')  # Handle potential BOM
@@ -211,19 +213,51 @@ def process_uploaded_appointments(file: UploadFile, has_headers: bool, session: 
         # Parse CSV using DictReader
         if has_headers:
             reader = csv.DictReader(csv_data)
+            # Validate headers
+            required_headers = {
+                'Client', 'Client Number', 'Mobile', 'Sex', 'Gender Identity',
+                'Postcode', 'State', 'Practitioner', 'Location', 'Date',
+                'End Time', 'Appointment Type', 'Type', 'Invoice',
+                'Appointment Notes', 'Appointment Flag', 'Status'
+            }
+            actual_headers = set(reader.fieldnames) if reader.fieldnames else set()
+            if not required_headers.issubset(actual_headers):
+                missing_headers = required_headers - actual_headers
+                stats["errors"] += 1
+                stats["error_details"].append({
+                    "row": 0,
+                    "error": f"Missing required headers: {missing_headers}"
+                })
+                return stats
         else:
             default_columns = [
-                'Client', 'Client Number', 'Mobile', 'Sex', 'Gender Identity', 
-                'Postcode', 'State', 'Practitioner', 'Location', 'Date', 
-                'End Time', 'Appointment Type', 'Type', 'Invoice', 
+                'Client', 'Client Number', 'Mobile', 'Sex', 'Gender Identity',
+                'Postcode', 'State', 'Practitioner', 'Location', 'Date',
+                'End Time', 'Appointment Type', 'Type', 'Invoice',
                 'Appointment Notes', 'Appointment Flag', 'Status'
             ]
             reader = csv.DictReader(csv_data, fieldnames=default_columns)
+
+        # Store appointments temporarily
+        appointments_to_create = []
 
         # Process each row
         for row in reader:
             try:
                 stats["total_processed"] += 1
+
+                # Validate required fields
+                required_fields = {
+                    'Client': row.get('Client'),
+                    'Client Number': row.get('Client Number'),
+                    'Practitioner': row.get('Practitioner'),
+                    'Location': row.get('Location'),
+                    'Date': row.get('Date')
+                }
+                
+                missing_fields = [field for field, value in required_fields.items() if not value]
+                if missing_fields:
+                    raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
 
                 # Get or create patient
                 patient = get_or_create_patient(
@@ -256,7 +290,7 @@ def process_uploaded_appointments(file: UploadFile, has_headers: bool, session: 
                 # Parse appointment date and time
                 parsed_datetime = parse_datetime(row.get("Date", ""))
                 print(f"Parsed datetime: {parsed_datetime}")
-                appointment_datetime = parsed_datetime or datetime.now()
+                appointment_datetime = parsed_datetime
                 print(f"Final appointment_datetime: {appointment_datetime}")
                 end_time = parse_time(row.get("End Time", "")) or time(0, 0)
 
@@ -280,8 +314,7 @@ def process_uploaded_appointments(file: UploadFile, has_headers: bool, session: 
                     updated_at=datetime.now()
                 )
 
-                session.add(appointment)
-                stats["created"] += 1
+                appointments_to_create.append(appointment)
                 print(f"finished checking appointment {appointment}")
 
             except Exception as e:
@@ -292,13 +325,31 @@ def process_uploaded_appointments(file: UploadFile, has_headers: bool, session: 
                     "error": str(e)
                 })
 
-        # Commit all changes at the end
-        session.commit()
+        # Add all appointments and commit only if there are no errors
+        if stats["errors"] == 0:
+            for appointment in appointments_to_create:
+                session.add(appointment)
+            try:
+                session.commit()
+                stats["created"] = len(appointments_to_create)
+            except Exception as e:
+                session.rollback()
+                stats["errors"] += len(appointments_to_create)
+                for i in range(len(appointments_to_create)):
+                    stats["error_details"].append({
+                        "row": i + 1,
+                        "error": f"Database error: {str(e)}"
+                    })
+                stats["created"] = 0
 
     except Exception as e:
         # Roll back the session on error
         session.rollback()
-        raise Exception(f"Failed to process CSV file: {str(e)}")
+        stats["errors"] += 1
+        stats["error_details"].append({
+            "row": 0,
+            "error": f"Failed to process CSV file: {str(e)}"
+        })
 
     return stats
 
@@ -463,6 +514,59 @@ def process_csv_file(file_path: str):
     finally:
         # Close the session
         session.close()
+
+def delete_appointment(session: Session, appointment_id: int) -> bool:
+    """
+    Delete an appointment from the database.
+
+    Args:
+        session: Database session
+        appointment_id: ID of the appointment to delete
+
+    Returns:
+        bool: True if deletion was successful, False otherwise
+    """
+    try:
+        # Find the appointment
+        appointment = session.query(Appointment).filter(Appointment.appointment_id == appointment_id).first()
+        if not appointment:
+            return False
+
+        # Delete the appointment
+        session.delete(appointment)
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error deleting appointment: {str(e)}")
+        return False
+
+def delete_authorization(session: Session, authorization_id: int) -> bool:
+    """
+    Delete an authorization from the database.
+
+    Args:
+        session: Database session
+        authorization_id: ID of the authorization to delete
+
+    Returns:
+        bool: True if deletion was successful, False otherwise
+    """
+    try:
+        # Find the authorization
+        authorization = session.query(Authorization).filter(Authorization.authorization_id == authorization_id).first()
+        if not authorization:
+            return False
+
+        # Delete the authorization
+        session.delete(authorization)
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error deleting authorization: {str(e)}")
+        return False
+
 def main():
     """Main function to run the import process."""
     if len(sys.argv) < 2:
