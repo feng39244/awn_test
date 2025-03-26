@@ -6,15 +6,13 @@ import os
 import io
 from typing import Dict, List, Optional
 from gradio_pdf import PDF
-
-# PDF extraction library
 import pypdfium2 as pdfium
 
-class MedicalPDFExtractor:
+class MedicalInfoExtractor:
     def __init__(self, 
                  key_patterns: Dict[str, List[str]] = None):
         """
-        Initialize PDF extractor with extraction methods
+        Initialize extractor with extraction methods
         
         :param key_patterns: Dictionary of key extraction patterns
         """
@@ -26,6 +24,7 @@ class MedicalPDFExtractor:
             ],
             'patient_dob': [
                 r'DOB:\s*(\d{1,2}/\d{1,2}/\d{4})',
+                r'Date\s*of\s*Birth\s*[:]*\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
             'patient_ssn': [
                 r'SSN:\s*(\d{3}-\d{2}-\d{4})',
@@ -100,15 +99,16 @@ class MedicalPDFExtractor:
             print(f"Error extracting text: {e}")
             return ""
 
-    def extract_key_information(self, pdf_path: str) -> Dict[str, Optional[str]]:
+    def extract_key_information(self, input_source: str, is_pdf: bool = False) -> Dict[str, Optional[str]]:
         """
-        Extract key information from PDF using regex patterns with enhanced debugging
+        Extract key information from input source (PDF or text)
         
-        :param pdf_path: Path to the PDF file
+        :param input_source: Path to PDF or raw text
+        :param is_pdf: Flag to indicate if input is a PDF file
         :return: Dictionary of extracted information
         """
-        # Extract text from PDF
-        full_text = self.extract_text_from_pdf(pdf_path)
+        # Extract text based on input type
+        full_text = self.extract_text_from_pdf(input_source) if is_pdf else input_source
         
         # Extract information using patterns
         extracted_info = {}
@@ -128,48 +128,56 @@ class MedicalPDFExtractor:
         
         # Additional debugging: print full text if no matches found
         if all(value is None for value in extracted_info.values()):
-            print("No matches found. Full PDF text:")
+            print("No matches found. Full text:")
             print(full_text)
         
         return extracted_info
 
-def create_pdf_extractor_app():
+def create_medical_extractor_app():
     """
-    Create Gradio app for PDF information extraction
+    Create Gradio app for medical information extraction
     """
     # Configure logging
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
 
     # Initialize extractor
-    extractor = MedicalPDFExtractor()
+    extractor = MedicalInfoExtractor()
 
-    def extract_info(pdf_file):
+    def extract_info(pdf_file, text_input):
         """
-        Process PDF and return extracted information
+        Process input and return extracted information
         """
-        logger.debug(f"PDF File received: {pdf_file}")
-        
-        if pdf_file is None:
-            logger.warning("No PDF file uploaded")
-            return "Please upload a PDF file.", None, None
+        # Determine input source
+        if pdf_file and text_input:
+            return "Please use either PDF upload OR text input, not both.", None, None
         
         try:
-            # Verify file exists and is a PDF
-            if not os.path.exists(pdf_file):
-                logger.error(f"File does not exist: {pdf_file}")
-                return "File does not exist.", None, None
+            # PDF file processing
+            if pdf_file:
+                logger.debug(f"PDF File received: {pdf_file}")
+                
+                # Verify file exists and is a PDF
+                if not os.path.exists(pdf_file):
+                    logger.error(f"File does not exist: {pdf_file}")
+                    return "File does not exist.", None, None
+                
+                if not pdf_file.lower().endswith('.pdf'):
+                    logger.error(f"Not a PDF file: {pdf_file}")
+                    return "Please upload a valid PDF file.", None, None
+                
+                # Extract information from PDF
+                extracted_info = extractor.extract_key_information(pdf_file, is_pdf=True)
+                input_source = pdf_file
             
-            if not pdf_file.lower().endswith('.pdf'):
-                logger.error(f"Not a PDF file: {pdf_file}")
-                return "Please upload a valid PDF file.", None, None
+            # Text input processing
+            elif text_input:
+                logger.debug("Text input received")
+                extracted_info = extractor.extract_key_information(text_input, is_pdf=False)
+                input_source = "Text Input"
             
-            # Log file details
-            file_stats = os.stat(pdf_file)
-            logger.debug(f"File size: {file_stats.st_size} bytes")
-
-            # Extract information
-            extracted_info = extractor.extract_key_information(pdf_file)
+            else:
+                return "Please upload a PDF or enter text.", None, None
             
             # Format results for display
             result_text = "Extracted Information:\n"
@@ -181,32 +189,39 @@ def create_pdf_extractor_app():
             df.index.name = 'Key'
             df = df.reset_index()
             
-            logger.info("PDF extraction successful")
-            return result_text, df, pdf_file
+            logger.info("Information extraction successful")
+            return result_text, df, input_source
         
         except Exception as e:
-            logger.error(f"Error processing PDF: {str(e)}")
-            return f"Error processing PDF: {str(e)}", None, None
+            logger.error(f"Error processing input: {str(e)}")
+            return f"Error processing input: {str(e)}", None, None
 
     # Create Gradio interface
-    with gr.Blocks(title="Medical PDF Information Extractor") as demo:
-        gr.Markdown("# Medical Authorization PDF Information Extractor")
+    with gr.Blocks(title="Medical Information Extractor") as demo:
+        gr.Markdown("# Medical Information Extractor")
         
         with gr.Row():
             with gr.Column(scale=1):
-                pdf_input = gr.File(label="Upload PDF", file_types=['.pdf'])
+                # Input options
+                with gr.Tabs():
+                    with gr.TabItem("PDF Upload"):
+                        pdf_input = gr.File(label="Upload PDF", file_types=['.pdf'])
+                    
+                    with gr.TabItem("Text Input"):
+                        text_input = gr.Textbox(label="Paste Text", lines=10, placeholder="Paste your medical document text here...")
+                
+                # Extract button
                 extract_btn = gr.Button("Extract Information", variant="primary")
                 
-                # Text and DataFrame outputs
+                # Outputs
                 text_output = gr.Textbox(label="Extracted Text", lines=10)
                 df_output = gr.DataFrame(label="Extracted Information")
             
             with gr.Column(scale=1):
-                # PDF Preview using PDF Viewer
+                # PDF Preview (only visible for PDF uploads)
                 pdf_preview = PDF(label="PDF Preview", interactive=True)
 
-        
-        # Set up event handlers
+        # Event handlers
         pdf_input.upload(
             fn=lambda file: file, 
             inputs=pdf_input, 
@@ -215,21 +230,21 @@ def create_pdf_extractor_app():
         
         extract_btn.click(
             fn=extract_info, 
-            inputs=pdf_input, 
+            inputs=[pdf_input, text_input], 
             outputs=[text_output, df_output, pdf_preview]
         )
         
-        # Add some explanatory text
+        # Explanatory text
         gr.Markdown("""
         ### How to Use
-        1. Upload a medical authorization PDF
-        2. Preview the PDF
+        1. Choose between PDF Upload or Text Input
+        2. Upload PDF or paste text
         3. Click "Extract Information"
         4. View extracted details in text and table format
         
         #### Notes
-        - Uses PyPDFium2 for PDF text extraction
-        - Supports various PDF formats
+        - Supports PDF and direct text input
+        - Uses advanced regex for information extraction
         - Cross-platform compatibility
         """)
 
@@ -237,5 +252,5 @@ def create_pdf_extractor_app():
 
 # Launch the app
 if __name__ == "__main__":
-    demo = create_pdf_extractor_app()
+    demo = create_medical_extractor_app()
     demo.launch(debug=True, share=True)

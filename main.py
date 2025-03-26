@@ -28,6 +28,9 @@ from models import (
 from seed import insert_sample_data
 import appointment_service
 from fastapi.templating import Jinja2Templates
+from medical-pdf-extractor-ui import MedicalInfoExtractor
+
+extractor = MedicalInfoExtractor()
 
 # Create FastAPI app
 app = FastAPI(title="CMS-1500 Billing System")
@@ -415,3 +418,51 @@ def delete_authorization_endpoint(authorization_id: int, session: Session = Depe
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Authorization not found or could not be deleted"
     )
+@app.route("/extract-medical-info", methods=["GET", "POST"])
+async def extract_medical_info(request: Request, 
+                                file: UploadFile = File(None), 
+                                text_input: str = Form(None)):
+    """
+    Extract medical information and render Jinja2 template
+    """
+    extracted_info = None
+    error = None
+
+    try:
+        # Check if it's a POST request with file or text input
+        if request.method == "POST":
+            # Validate input
+            if file is None and not text_input:
+                error = "Please provide either a PDF file or text input"
+            
+            # PDF file processing
+            elif file:
+                # Check file type
+                if not file.filename.lower().endswith('.pdf'):
+                    error = "Only PDF files are supported"
+                else:
+                    # Read file bytes
+                    pdf_bytes = await file.read()
+                    
+                    # Extract information from PDF
+                    extracted_info = extractor.extract_key_information(pdf_bytes, is_pdf=True)
+            
+            # Text input processing
+            elif text_input:
+                # Extract information from text
+                extracted_info = extractor.extract_key_information(text_input, is_pdf=False)
+        
+        # Render template with extracted information
+        return templates.TemplateResponse("medical_extractor.html", {
+            "request": request,
+            "extracted_info": extracted_info,
+            "error": error
+        })
+    
+    except Exception as e:
+        # Handle any unexpected errors
+        error = str(e)
+        return templates.TemplateResponse("medical_extractor.html", {
+            "request": request,
+            "error": error
+        })
