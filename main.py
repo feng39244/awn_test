@@ -28,7 +28,7 @@ from models import (
 from seed import insert_sample_data
 import appointment_service
 from fastapi.templating import Jinja2Templates
-from medical-pdf-extractor-ui import MedicalInfoExtractor
+from medical_pdf_extractor_ui import MedicalInfoExtractor
 
 extractor = MedicalInfoExtractor()
 
