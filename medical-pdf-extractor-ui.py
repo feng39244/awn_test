@@ -18,41 +18,54 @@ class MedicalPDFExtractor:
         
         :param key_patterns: Dictionary of key extraction patterns
         """
-        # Default key extraction patterns
+        # Updated default key extraction patterns
         self.default_patterns = {
             'patient_name': [
-                r'Legal\s*Name\s*[:]*\s*([^\n:]+)',
-                r'Patient\s*Name\s*[:]*\s*([^\n:]+)',
-                r'Name\s*[:]*\s*([^\n:]+)',
+                r'Name:\s*([^\n]+)',
+                r'Name\s*([^\n]+)',
             ],
-            'claim_number': [
-                r'Claim\s*Number\s*[:]*\s*(\S+)',
-                r'Claim\s*#\s*[:]*\s*(\S+)',
+            'patient_dob': [
+                r'DOB:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'date_of_service': [
-                r'Electronically\s*signed\s*by:.*\n.*\n(\d{1,2}/\d{1,2}/\d{4})',
-                r'Date\s*of\s*Service\s*[:]*\s*(\d{1,2}/\d{1,2}/\d{4})',
+            'patient_ssn': [
+                r'SSN:\s*(\d{3}-\d{2}-\d{4})',
             ],
-            'date_of_birth': [
-                r'Date\s*of\s*Birth\s*[:]*\s*(\d{1,2}/\d{1,2}/\d{4})',
-                r'DOB\s*[:]*\s*(\d{1,2}/\d{1,2}/\d{4})',
+            'patient_phone': [
+                r'Phone:\s*H:\s*(\(\d{3}\)\s*\d{3}-\d{4})',
+            ],
+            'patient_address': [
+                r'Address 1:\s*([^\n]+)\nCity/ST/Zip:\s*([^\n]+)',
+            ],
+            'employer': [
+                r'Employer:\s*([^\n]+)',
+            ],
+            'injury_date': [
+                r'Injury Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
+            ],
+            'injury_details': [
+                r'Details:\s*([^\n]+)',
+            ],
+            'physician_name': [
+                r'Physician:\s*([^\n]+)',
+            ],
+            'physician_npi': [
+                r'NPI Number:\s*(\d+)',
+            ],
+            'provider_name': [
+                r'Provider:\s*([^\n]+)',
             ],
             'authorized_sessions': [
-                r'(\d+)\s*session',
-                r'Massage\s*Therapy\s*.*?(\d+)\s*session',
-                r'Authorized\s*Sessions\s*[:]*\s*(\d+)',
+                r'Total Auth:\s*(\d+)',
+                r'Frequency=\d+\s*Duration=\d+\s*Total Auth:\s*(\d+)',
             ],
-            'insurance_provider': [
-                r'Carrier\s*Name\s*[:]*\s*([^\n:]+)',
-                r'Insurance\s*Provider\s*[:]*\s*([^\n:]+)',
+            'authorization_date': [
+                r'Auth Effective Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'diagnosis_code': [
-                r'DIAGNOSIS\s*ICD-CODE\s*\n\s*(\w+\.\d+)',
-                r'Diagnosis\s*Code\s*[:]*\s*(\w+\.\d+)',
+            'rx_expiration_date': [
+                r'RX Expiration Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'authorization_status': [
-                r'Notification\s*for\s*Pre-Authorized\s*Services',
-                r'Authorization\s*Status\s*[:]*\s*([^\n:]+)',
+            'procedure': [
+                r'Procedure:\s*([^\n]+)',
             ]
         }
         
