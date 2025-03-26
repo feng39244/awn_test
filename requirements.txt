@@ -31,3 +31,5 @@ pandas
 
 python-multipart
 pypdfium2
+pandas
+gradio
