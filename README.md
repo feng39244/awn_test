@@ -192,4 +192,5 @@ For production deployment, make sure to:
 uvicorn main:app --reload
 
 ## Cloud testing
+source ~/repos/awn_test/venv/bin/activate
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
