@@ -14,13 +14,17 @@ import easyocr
 from PIL import Image
 import tempfile
 import numpy as np
+from dotenv import load_dotenv
 
+# Load environment variables
+load_dotenv()
+DB_PASSWORD = os.getenv("DB_PASSWORD", "xxx")
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:92883@localhost:5432/userdb")
+DATABASE_URL = os.getenv("DATABASE_URL", f"postgresql://postgres:{DB_PASSWORD}@localhost:5432/userdb")
 engine = create_engine(DATABASE_URL)
 
 class MedicalInfoExtractor:
