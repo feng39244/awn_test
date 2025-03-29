@@ -10,6 +10,10 @@ import pypdfium2 as pdfium
 from datetime import datetime, timezone
 from sqlmodel import Session, create_engine, select
 from models import Patient, Gender, Provider, Authorization, ServiceType, AuthorizationStatus
+import easyocr
+from PIL import Image
+import tempfile
+import numpy as np
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -27,6 +31,9 @@ class MedicalInfoExtractor:
         
         :param key_patterns: Dictionary of key extraction patterns
         """
+        # Initialize OCR reader
+        self.reader = easyocr.Reader(['en'])  # Initialize with English language
+        
         # OneCall PDF patterns
         self.onecall_patterns = {
             'patient_name': [
@@ -170,101 +177,175 @@ class MedicalInfoExtractor:
             ]
         }
         
-        # Corvel PDF patterns (to be filled with actual patterns)
+        # Corvel PDF patterns
         self.corvel_patterns = {
             'patient_name': [
-                # Add Corvel-specific patterns here
+                r'CLAIMANT:\s*([^\n]+)',
+                r'Claimant:\s*([^\n]+)',
             ],
             'patient_dob': [
-                # Add Corvel-specific patterns here
+                r'DOB:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'patient_ssn': [
-                # Add Corvel-specific patterns here
-            ],
-            'patient_phone': [
-                # Add Corvel-specific patterns here
-            ],
-            'patient_address': [
-                # Add Corvel-specific patterns here
-            ],
-            'employer': [
-                # Add Corvel-specific patterns here
+            'claim_number': [
+                r'CLAIM\s*#:\s*([^\n]+)',
+                r'Claim\s*#:\s*([^\n]+)',
             ],
             'injury_date': [
-                # Add Corvel-specific patterns here
+                r'DOI:\s*(\d{1,2}/\d{1,2}/\d{4})',
+                r'Date\s*of\s*Injury:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'injury_details': [
-                # Add Corvel-specific patterns here
+            'employer': [
+                r'INSURED:\s*([^\n]+)',
+                r'Insured:\s*([^\n]+)',
             ],
-            'physician_name': [
-                # Add Corvel-specific patterns here
+            'carrier': [
+                r'CARRIER/TPA:\s*([^\n]+)',
+                r'Carrier/TPA:\s*([^\n]+)',
             ],
-            'physician_npi': [
-                # Add Corvel-specific patterns here
+            'adjuster': [
+                r'ADJUSTER:\s*([^\n]+)',
+                r'Adjuster:\s*([^\n]+)',
+            ],
+            'corvel_number': [
+                r'CORVEL\s*#\s*([^\n]+)',
+                r'CorVel\s*#\s*([^\n]+)',
+            ],
+            'determination_date': [
+                r'Determination\s*Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
+            ],
+            'rfa_received_date': [
+                r'RFA\s*Received\s*Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
             'provider_name': [
-                # Add Corvel-specific patterns here
+                r'Provider:\s*([^\n]+)',
+                r'PROVIDER:\s*([^\n]+)',
+            ],
+            'pre_cert_number': [
+                r'Pre-Cert\s*#:\s*([^\n]+)',
+                r'Pre-Cert\s*Number:\s*([^\n]+)',
+            ],
+            'network': [
+                r'Network:\s*([^\n]+)',
+            ],
+            'service_type': [
+                r'Type\s*of\s*Therapy:\s*([^\n]+)',
+                r'Type\s*of\s*Service:\s*([^\n]+)',
+            ],
+            'body_part': [
+                r'Body\s*Part:\s*([^\n]+)',
+                r'Part:\s*([^\n]+)',
             ],
             'authorized_sessions': [
-                # Add Corvel-specific patterns here
+                r'Certified\s*Visits:\s*(\d+)',
+                r'Authorized\s*Visits:\s*(\d+)',
             ],
-            'authorization_date': [
-                # Add Corvel-specific patterns here
+            'effective_date': [
+                r'Effective\s*Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'rx_expiration_date': [
-                # Add Corvel-specific patterns here
+            'termination_date': [
+                r'Termination\s*Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'procedure': [
-                # Add Corvel-specific patterns here
+            'facility': [
+                r'Facility:\s*([^\n]+)',
+                r'FACILITY:\s*([^\n]+)',
+            ],
+            'claims_examiner': [
+                r'Claims\s*Examiner:\s*([^\n]+)',
+                r'Claims\s*Examiner\s*Name:\s*([^\n]+)',
+            ],
+            'contact_phone': [
+                r'Contact\s*Information:\s*(\d{10})',
+                r'Phone:\s*(\d{10})',
+            ],
+            'hours_of_operation': [
+                r'Hours\s*of\s*operation:\s*([^\n]+)',
             ]
         }
         
-        # HomeLink PDF patterns (to be filled with actual patterns)
+        # HomeLink PDF patterns
         self.homelink_patterns = {
             'patient_name': [
-                # Add HomeLink-specific patterns here
+                r'Patient\s*Name:\s*([^\n]+)',
+                r'Patient:\s*([^\n]+)',
             ],
             'patient_dob': [
-                # Add HomeLink-specific patterns here
-            ],
-            'patient_ssn': [
-                # Add HomeLink-specific patterns here
+                r'Date\s*of\s*Birth:\s*(\d{1,2}/\d{1,2}/\d{4})',
+                r'DOB:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
             'patient_phone': [
-                # Add HomeLink-specific patterns here
+                r'Phone:\s*(\d{3}-\d{3}-\d{4})',
+                r'Alt:\s*Phone:\s*(\d{3}-\d{3}-\d{4})',
             ],
             'patient_address': [
-                # Add HomeLink-specific patterns here
-            ],
-            'employer': [
-                # Add HomeLink-specific patterns here
+                r'([^\n]+)\n([^\n]+,\s*[A-Z]{2}\s*\d{5})',
             ],
             'injury_date': [
-                # Add HomeLink-specific patterns here
+                r'Date\s*of\s*Injury:\s*(\d{1,2}/\d{1,2}/\d{4})',
+                r'DOI:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'injury_details': [
-                # Add HomeLink-specific patterns here
+            'diagnosis': [
+                r'Diagnosis:\s*([^\n]+)',
             ],
             'physician_name': [
-                # Add HomeLink-specific patterns here
+                r'Physician:\s*([^\n]+)',
             ],
-            'physician_npi': [
-                # Add HomeLink-specific patterns here
+            'physician_phone': [
+                r'Physician\s*Phone:\s*(\d{3}-\d{3}-\d{4})',
             ],
             'provider_name': [
-                # Add HomeLink-specific patterns here
+                r'To:\s*([^\n]+)',
+                r'Servicing\s*Location\s*([^\n]+)',
+            ],
+            'provider_address': [
+                r'([^\n]+)\n([^\n]+,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)',
+            ],
+            'provider_phone': [
+                r'Phone:\s*(\d{3}-\d{3}-\d{4})',
+            ],
+            'provider_fax': [
+                r'Fax:\s*(\d{3}-\d{3}-\d{4})',
+            ],
+            'service_type': [
+                r'Service\s*Type:\s*([^\n]+)',
+                r'Therapy/Service:\s*([^\n]+)',
             ],
             'authorized_sessions': [
-                # Add HomeLink-specific patterns here
+                r'Total\s*Visits\s*(\d+)',
+                r'Auth\'d\s*Visits\s*(\d+)',
             ],
             'authorization_date': [
-                # Add HomeLink-specific patterns here
+                r'Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
             ],
-            'rx_expiration_date': [
-                # Add HomeLink-specific patterns here
+            'order_number': [
+                r'Order\s*#:\s*([^\n]+)',
+                r'HOMELINK\s*Order:\s*([^\n]+)',
             ],
-            'procedure': [
-                # Add HomeLink-specific patterns here
+            'contact_name': [
+                r'Contact:\s*([^\n]+)',
+            ],
+            'contact_phone': [
+                r'Phone/Fax:\s*(\d{10})',
+            ],
+            'contact_email': [
+                r'Email:\s*([^\n]+)',
+            ],
+            'height': [
+                r'Height:\s*([^\n]+)',
+            ],
+            'weight': [
+                r'Weight:\s*([^\n]+)',
+            ],
+            'language': [
+                r'Language:\s*([^\n]+)',
+            ],
+            'start_date': [
+                r'Start\s*Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
+            ],
+            'end_date': [
+                r'End\s*Date:\s*(\d{1,2}/\d{1,2}/\d{4})',
+            ],
+            'treatment_description': [
+                r'Rental\s*Description\s*([^\n]+)',
             ]
         }
         
@@ -287,11 +368,12 @@ class MedicalInfoExtractor:
         else:
             return self.text_patterns  # Default to text patterns if no PDF type specified
 
-    def extract_text_from_pdf(self, pdf_path: str) -> str:
+    def extract_text_from_pdf(self, pdf_path: str, pdf_type: str = None) -> str:
         """
-        Extract text from PDF using pypdfium2
+        Extract text from PDF using pypdfium2 and easyocr for Corvel and HomeLink PDFs
         
         :param pdf_path: Path to the PDF file
+        :param pdf_type: Type of PDF (onecall, corvel, or homelink)
         :return: Extracted text from the PDF
         """
         try:
@@ -303,17 +385,41 @@ class MedicalInfoExtractor:
             for page_index in range(len(pdf)):
                 # Render the page to text
                 page = pdf[page_index]
-                text_page = page.get_textpage()
-                page_text = text_page.get_text_bounded()
+                
+                # For Corvel and HomeLink PDFs, use easyocr OCR
+                if pdf_type and pdf_type.lower() in ['corvel', 'homelink']:
+                    # Convert PDF page to image
+                    bitmap = page.render(
+                        scale=2.0,  # Higher scale for better OCR quality
+                        rotation=0
+                    )
+                    
+                    # Convert bitmap to PIL Image
+                    image = bitmap.to_pil()
+                    
+                    # Convert PIL Image to numpy array for easyocr
+                    image_np = np.array(image)
+                    
+                    # Use easyocr to extract text from the image
+                    results = self.reader.readtext(image_np)
+                    
+                    # Combine all detected text
+                    page_text = "\n".join([text[1] for text in results])
+                    print(f"\n\n\n\n\n\n\n\n\n page text for {pdf_type} PDF:", page_text)
+                else:
+                    # For other PDFs, use regular text extraction
+                    text_page = page.get_textpage()
+                    page_text = text_page.get_text_bounded()
                 
                 # Append page text
                 extracted_text += page_text + "\n"
                 
                 # Debug: Save extracted text to file for analysis
-                if 'CorvelAuth.pdf' in pdf_path:
-                    with open('corvel_debug.txt', 'w', encoding='utf-8') as f:
+                if pdf_type and pdf_type.lower() in ['corvel', 'homelink']:
+                    debug_filename = f'{pdf_type.lower()}_debug.txt'
+                    with open(debug_filename, 'w', encoding='utf-8') as f:
                         f.write(extracted_text)
-                    print("\n=== Corvel PDF Content Saved to corvel_debug.txt ===")
+                    print(f"\n=== {pdf_type} PDF Content Saved to {debug_filename} ===")
             
             return extracted_text
         
@@ -331,7 +437,7 @@ class MedicalInfoExtractor:
         :return: Dictionary of extracted information
         """
         # Extract text based on input type
-        full_text = self.extract_text_from_pdf(input_source) if is_pdf else input_source
+        full_text = self.extract_text_from_pdf(input_source, pdf_type) if is_pdf else input_source
         
         # Debug: Print the full text for analysis
         print("\n=== Full Text for Analysis ===")
