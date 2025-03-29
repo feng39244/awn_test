@@ -7,7 +7,7 @@ import io
 from typing import Dict, List, Optional
 from gradio_pdf import PDF
 import pypdfium2 as pdfium
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from sqlmodel import Session, create_engine, select
 from models import Patient, Gender, Provider, Authorization, ServiceType, AuthorizationStatus
 import easyocr
@@ -149,6 +149,15 @@ class MedicalInfoExtractor:
             ],
             'procedure': [
                 r'Procedure:\s*([^\n]+)',
+            ],
+            'case_id': [
+                r'Case\s*Number:\s*([^\n]+)',
+                r'Case\s*#:\s*([^\n]+)',
+                r'Case\s*ID:\s*([^\n]+)',
+            ],
+            'claim_number': [
+                r'Claim\s*Number:\s*([^\n]+)',
+                r'Claim\s*#:\s*([^\n]+)',
             ]
         }
         
@@ -223,10 +232,6 @@ class MedicalInfoExtractor:
             'jurisdiction_state': [
                 r'Jurisdiction\s*State:\s*([^\n]+)',
                 r'Jurisdiction\s*State\s*:\s*([^\n]+)',
-            ],
-            'claim_number': [
-                r'Claim\s*Number:\s*([^\n]+)',
-                r'Claim\s*Number\s*:\s*([^\n]+)',
             ],
             'surgery_date': [
                 r'Date\s*of\s*Surgery:\s*(\d{1,2}/\d{1,2}/\d{4})',
@@ -564,6 +569,9 @@ class MedicalInfoExtractor:
         :return: Success/error message
         """
         try:
+            logger.info("Starting save_to_database process")
+            logger.info(f"Extracted info keys: {list(extracted_info.keys())}")
+            
             with Session(engine) as session:
                 # Extract patient information
                 patient_name = extracted_info.get('patient_name', '').strip()
@@ -572,12 +580,15 @@ class MedicalInfoExtractor:
                 last_name = name_parts[-1] if len(name_parts) > 1 else "Unknown"
                 middle_name = " ".join(name_parts[1:-1]) if len(name_parts) > 2 else None
 
+                logger.info(f"Processing patient: {first_name} {last_name}")
+
                 # Map date fields based on PDF type
                 pdf_type = extracted_info.get('pdf_type', '').lower()
                 dob = None
                 if extracted_info.get('patient_dob'):
                     try:
                         dob = datetime.strptime(extracted_info['patient_dob'], '%m/%d/%Y').date()
+                        logger.info(f"Parsed DOB: {dob}")
                     except ValueError:
                         logger.warning(f"Invalid date format: {extracted_info['patient_dob']}")
 
@@ -595,13 +606,16 @@ class MedicalInfoExtractor:
                     updated_at=datetime.now(timezone.utc)
                 )
 
+                logger.info("Attempting to add patient to database...")
                 session.add(patient)
                 session.commit()
                 session.refresh(patient)
+                logger.info(f"Successfully created patient record with ID: {patient.patient_id}")
 
                 # Handle provider record
                 provider = None
                 if extracted_info.get('provider_name'):
+                    logger.info(f"Processing provider: {extracted_info['provider_name']}")
                     # Check if provider already exists
                     existing_provider = session.exec(
                         select(Provider).where(Provider.name == extracted_info['provider_name'])
@@ -610,7 +624,7 @@ class MedicalInfoExtractor:
                     if existing_provider:
                         # Use existing provider
                         provider = existing_provider
-                        logger.info(f"Using existing provider: {provider.name}")
+                        logger.info(f"Using existing provider: {provider.name} (ID: {provider.provider_id})")
                     else:
                         # Create new provider
                         provider = Provider(
@@ -620,16 +634,21 @@ class MedicalInfoExtractor:
                             created_at=datetime.now(timezone.utc),
                             updated_at=datetime.now(timezone.utc)
                         )
+                        logger.info("Attempting to add new provider to database...")
                         session.add(provider)
                         session.commit()
                         session.refresh(provider)
-                        logger.info(f"Created new provider: {provider.name}")
+                        logger.info(f"Successfully created new provider: {provider.name} (ID: {provider.provider_id})")
+                else:
+                    logger.warning("No provider name found in extracted info")
 
                 # Create authorization record with mapped fields
-                if provider and extracted_info.get('case_id'):
+                if provider:  # Only check for provider, case_id is now optional
+                    logger.info(f"Creating authorization record for case_id: {extracted_info.get('case_id', 'Not provided')}")
                     # Map service type based on PDF type
                     service_type = ServiceType.OTHER  # Default to OTHER
-                    service_type_str = extracted_info.get('service_type', '').lower()
+                    service_type_str = extracted_info.get('service_type', '')  # Get service type with empty string default
+                    logger.info(f"Service type string: {service_type_str}")
                     
                     # Map service type strings to enum values
                     service_type_mapping = {
@@ -641,11 +660,18 @@ class MedicalInfoExtractor:
                         'st': ServiceType.SPEECH_THERAPY,
                     }
                     
-                    # Try to map the service type
-                    for key, value in service_type_mapping.items():
-                        if key in service_type_str:
-                            service_type = value
-                            break
+                    # Try to map the service type if we have a string
+                    if service_type_str:
+                        service_type_str = service_type_str.lower()
+                        for key, value in service_type_mapping.items():
+                            if key in service_type_str:
+                                service_type = value
+                                logger.info(f"Mapped service type to: {service_type.value}")
+                                break
+                        else:
+                            logger.info("No specific service type found, using default: OTHER")
+                    else:
+                        logger.info("No service type provided, using default: OTHER")
 
                     # Map initial evaluation date based on PDF type
                     initial_eval_date = None
@@ -659,14 +685,17 @@ class MedicalInfoExtractor:
                         # For OneCall and others, use injury_date
                         date_str = extracted_info.get('injury_date')
 
+                    logger.info(f"Initial evaluation date string: {date_str}")
                     if date_str:
                         try:
                             initial_eval_date = datetime.strptime(date_str, '%m/%d/%Y').date()
+                            logger.info(f"Parsed initial evaluation date: {initial_eval_date}")
                         except ValueError:
                             logger.warning(f"Invalid date format: {date_str}")
 
                     if not initial_eval_date:
                         initial_eval_date = datetime.now(timezone.utc).date()
+                        logger.info(f"Using current date as initial evaluation date: {initial_eval_date}")
 
                     # Map number of authorized visits based on PDF type
                     num_visits = 1  # Default value
@@ -681,6 +710,8 @@ class MedicalInfoExtractor:
                     else:
                         # For OneCall and others, use authorized_sessions
                         num_visits = int(extracted_info.get('authorized_sessions') or 1)
+                    
+                    logger.info(f"Number of authorized visits: {num_visits}")
 
                     # Handle authorization form file
                     authorization_form = None
@@ -689,7 +720,7 @@ class MedicalInfoExtractor:
                             # Read the original PDF file as binary data
                             with open(pdf_file, 'rb') as f:
                                 authorization_form = f.read()
-                            logger.info(f"Successfully read PDF file: {pdf_file}")
+                            logger.info(f"Successfully read PDF file: {pdf_file} (size: {len(authorization_form)} bytes)")
                         except Exception as e:
                             logger.error(f"Error reading PDF file: {str(e)}")
                     elif text_input:
@@ -697,6 +728,8 @@ class MedicalInfoExtractor:
                         authorization_form = create_pdf_from_text(text_input)
                         if not authorization_form:
                             logger.warning("Failed to create PDF from text input")
+                        else:
+                            logger.info(f"Successfully created PDF from text input (size: {len(authorization_form)} bytes)")
 
                     # Create authorization record with mapped fields
                     authorization = Authorization(
@@ -707,18 +740,26 @@ class MedicalInfoExtractor:
                         service_type=service_type,
                         initial_evaluation_date=initial_eval_date,
                         status=AuthorizationStatus.PENDING,
-                        notes=f"Case ID: {extracted_info.get('case_id')}",
+                        notes=f"Case ID: {extracted_info.get('case_id', 'Not provided')}",
                         authorization_form=authorization_form,
                         created_at=datetime.now(timezone.utc),
                         updated_at=datetime.now(timezone.utc)
                     )
+                    logger.info("Attempting to add authorization to database...")
                     session.add(authorization)
                     session.commit()
                     session.refresh(authorization)
 
+                    logger.info(f"Successfully created new authorization record with ID: {authorization.authorization_id}")
                     return f"Successfully saved patient and authorization information. Patient ID: {patient.patient_id}, Authorization ID: {authorization.authorization_id}"
                 else:
-                    return f"Successfully saved patient information. Patient ID: {patient.patient_id}"
+                    missing_items = []
+                    if not provider:
+                        missing_items.append("provider")
+                        logger.warning(f"Provider information missing. Available provider info: {extracted_info.get('provider_name', 'Not found')}")
+                    logger.warning(f"Missing required information for authorization: {', '.join(missing_items)}")
+                    logger.debug(f"Available extracted information: {extracted_info}")
+                    return f"Successfully saved patient information (but no authorization created - missing {', '.join(missing_items)}). Patient ID: {patient.patient_id}"
 
         except Exception as e:
             logger.error(f"Error saving to database: {str(e)}")
@@ -738,12 +779,37 @@ def create_medical_extractor_app():
         'text_input': None
     }
 
+    def update_extracted_data(df):
+        """
+        Update the stored extracted information with edited values
+        
+        :param df: Edited DataFrame containing the extracted information
+        """
+        if df is not None and not df.empty:
+            try:
+                # Convert DataFrame back to dictionary
+                edited_info = {}
+                for _, row in df.iterrows():
+                    key = row['Key']
+                    value = row['Value']
+                    # Handle empty strings and None values
+                    if pd.isna(value) or value == '':
+                        value = None
+                    edited_info[key] = value
+                
+                # Update the stored information
+                extracted_data['info'] = edited_info
+                logger.info("Updated extracted information with edited values")
+                logger.debug(f"Updated info: {edited_info}")
+            except Exception as e:
+                logger.error(f"Error updating extracted data: {str(e)}")
+
     def fetch_saved_record(authorization_id: int) -> str:
         """
-        Fetch the saved record from the database
+        Fetch the saved record from the database and display it in a table format
         
         :param authorization_id: ID of the saved authorization record
-        :return: Formatted string containing the record details
+        :return: Formatted string containing the record details in a table format
         """
         try:
             with Session(engine) as session:
@@ -752,18 +818,53 @@ def create_medical_extractor_app():
                 result = session.exec(query).first()
                 
                 if result:
-                    # Format the record details
-                    record_text = "Saved Record Details:\n\n"
-                    record_text += f"Authorization ID: {result.authorization_id}\n"
-                    record_text += f"Patient: {result.patient.first_name} {result.patient.last_name}\n"
-                    record_text += f"Provider: {result.provider.name}\n"
-                    record_text += f"Claim Number: {result.claim_number}\n"
-                    record_text += f"Service Type: {result.service_type.value}\n"
-                    record_text += f"Authorized Visits: {result.num_authorized_visits}\n"
-                    record_text += f"Initial Evaluation Date: {result.initial_evaluation_date}\n"
-                    record_text += f"Status: {result.status.value}\n"
-                    record_text += f"Created At: {result.created_at}\n"
-                    return record_text
+                    # Create a list of tuples for the table
+                    table_data = [
+                        # Patient Information
+                        ("patient_name", f"{result.patient.first_name} {result.patient.last_name}", "patients", "first_name, last_name"),
+                        ("patient_dob", result.patient.date_of_birth, "patients", "date_of_birth"),
+                        ("patient_address", result.patient.address, "patients", "address"),
+                        ("patient_phone", result.patient.phone, "patients", "phone"),
+                        ("case_id", result.patient.client_number, "patients", "client_number"),
+                        
+                        # Provider Information
+                        ("provider_name", result.provider.name, "providers", "name"),
+                        ("provider_address", result.provider.address, "providers", "address"),
+                        ("provider_phone", result.provider.phone, "providers", "phone"),
+                        
+                        # Authorization Information
+                        ("", result.authorization_id, "authorizations", "authorization_id"),
+                        ("claim_number", result.claim_number, "authorizations", "claim_number"),
+                        ("authorized_sessions", result.num_authorized_visits, "authorizations", "num_authorized_visits"),
+                        ("service_type", result.service_type.value, "authorizations", "service_type"),
+                        ("injury_date", result.initial_evaluation_date, "authorizations", "initial_evaluation_date"),
+                        ("", result.status.value, "authorizations", "status"),
+                        ("", result.created_at, "authorizations", "created_at"),
+                        ("", result.updated_at, "authorizations", "updated_at"),
+                        ("notes", result.notes, "authorizations", "notes")
+                    ]
+                    
+                    # Format the table
+                    table_text = "Saved Record Details:\n\n"
+                    table_text += "PDF/Text Key | Extracted Value | Database Table | Database Field |\n"
+                    table_text += "-" * 80 + "\n"
+                    
+                    for key, value, table, field in table_data:
+                        # Format the value
+                        if value is None:
+                            value_str = "NULL"
+                        elif isinstance(value, datetime):
+                            value_str = value.strftime("%Y-%m-%d %H:%M:%S")
+                        elif isinstance(value, date):
+                            value_str = value.strftime("%Y-%m-%d")
+                        else:
+                            value_str = str(value)
+                        
+                        # Format the row
+                        row = f"{key:12} | {value_str:15} | {table:13} | {field:14} |\n"
+                        table_text += row
+                    
+                    return table_text
                 else:
                     return "Record not found."
         except Exception as e:
@@ -845,20 +946,24 @@ def create_medical_extractor_app():
             return "No extracted information available. Please extract information first.", None, None, None
         
         try:
+            # Log the information being saved
+            logger.info("Saving information to database:")
+            logger.info(f"Current extracted data: {extracted_data['info']}")
+            
             # Save to database using stored information
             save_result = extractor.save_to_database(
-                extracted_data['info'],
+                extracted_data['info'],  # Use the updated info from edited DataFrame
                 extracted_data['pdf_file'],
                 extracted_data['text_input']
             )
             
-            # Format the result text
-            result_text = "Extracted Information:\n"
+            # Format the result text using the updated information
+            result_text = "Extracted Information (After Editing):\n"
             result_text += "\n".join([f"{key.replace('_', ' ').title()}: {value or 'Not Found'}" 
                                        for key, value in extracted_data['info'].items()])
             result_text += f"\n\n{save_result}"
             
-            # Create DataFrame for tabular view
+            # Create DataFrame for tabular view using the updated information
             df = pd.DataFrame.from_dict(extracted_data['info'], orient='index', columns=['Value'])
             df.index.name = 'Key'
             df = df.reset_index()
@@ -866,8 +971,15 @@ def create_medical_extractor_app():
             # Fetch and display the saved record
             saved_record_text = None
             if "Authorization ID:" in save_result:
-                auth_id = int(save_result.split("Authorization ID:")[1].strip())
-                saved_record_text = fetch_saved_record(auth_id)
+                try:
+                    auth_id = int(save_result.split("Authorization ID:")[1].strip())
+                    saved_record_text = fetch_saved_record(auth_id)
+                    logger.info(f"Fetched saved record for Authorization ID: {auth_id}")
+                except Exception as e:
+                    logger.error(f"Error fetching saved record: {str(e)}")
+                    saved_record_text = "Error fetching saved record details."
+            else:
+                saved_record_text = "No authorization record was created."
             
             return result_text, df, extracted_data['pdf_file'], saved_record_text
             
@@ -900,7 +1012,7 @@ def create_medical_extractor_app():
                 
                 # Outputs
                 text_output = gr.Textbox(label="Extracted Text", lines=10)
-                df_output = gr.DataFrame(label="Extracted Information")
+                df_output = gr.DataFrame(label="Extracted Information", interactive=True)  # Made interactive
             
             with gr.Column(scale=1):
                 # PDF Preview (only visible for PDF uploads)
@@ -926,6 +1038,13 @@ def create_medical_extractor_app():
             outputs=[text_output, df_output, pdf_preview, saved_record_output]
         )
         
+        # Add event handler for DataFrame changes
+        df_output.change(
+            fn=update_extracted_data,
+            inputs=df_output,
+            outputs=None
+        )
+        
         save_btn.click(
             fn=save_to_database,
             inputs=None,
@@ -942,12 +1061,14 @@ def create_medical_extractor_app():
         3. If using text input:
            - Paste the text directly
         4. Click "Extract Information" to view the extracted data
-        5. Click "Save to Database" to save the information
+        5. Edit any incorrect information in the table
+        6. Click "Save to Database" to save the information
         
         #### Notes
         - Supports PDF and direct text input
         - Uses advanced regex for information extraction
         - Cross-platform compatibility
+        - You can edit extracted information before saving
         """)
 
     return demo

@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List, ForwardRef
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from pydantic import EmailStr, validator, constr
 from typing import Optional
 from decimal import Decimal
@@ -614,24 +614,25 @@ class AuthorizationRead(AuthorizationBase):
     updated_at: datetime
 
 class Authorization(SQLModel, table=True):
+    """Authorization record for medical services"""
     __tablename__ = "authorizations"
-    
+
     authorization_id: Optional[int] = Field(default=None, primary_key=True)
     patient_id: int = Field(foreign_key="patients.patient_id")
     provider_id: int = Field(foreign_key="providers.provider_id")
-    claim_number: str = Field(..., max_length=50)
-    num_authorized_visits: int = Field(..., ge=1)
+    claim_number: Optional[str] = Field(default=None, nullable=True)  # Made optional
+    num_authorized_visits: int
     service_type: ServiceType
     initial_evaluation_date: date
-    status: AuthorizationStatus = Field(default=AuthorizationStatus.PENDING)
-    notes: Optional[str] = Field(default=None, max_length=1000)
-    authorization_form: Optional[bytes] = Field(default=None)  # Store PDF as binary data
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    status: AuthorizationStatus
+    notes: Optional[str] = Field(default=None)
+    authorization_form: Optional[bytes] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Relationships
     patient: Patient = Relationship(back_populates="authorizations")
     provider: Provider = Relationship(back_populates="authorizations")
 
     def update_timestamp(self):
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
