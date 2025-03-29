@@ -15,6 +15,11 @@ from PIL import Image
 import tempfile
 import numpy as np
 from dotenv import load_dotenv
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.units import inch
 
 # Load environment variables
 load_dotenv()
@@ -26,6 +31,62 @@ logger = logging.getLogger(__name__)
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", f"postgresql://postgres:{DB_PASSWORD}@localhost:5432/userdb")
 engine = create_engine(DATABASE_URL)
+
+def create_pdf_from_text(text: str) -> bytes:
+    """
+    Create a PDF file from text input
+    
+    :param text: Text content to convert to PDF
+    :return: PDF file as bytes
+    """
+    try:
+        # Create a BytesIO buffer to store the PDF
+        buffer = io.BytesIO()
+        
+        # Create the PDF
+        c = canvas.Canvas(buffer, pagesize=letter)
+        
+        # Set font and size
+        c.setFont("Helvetica", 12)
+        
+        # Split text into lines that fit the page width
+        lines = []
+        current_line = []
+        words = text.split()
+        
+        for word in words:
+            current_line.append(word)
+            line_width = c.stringWidth(' '.join(current_line), "Helvetica", 12)
+            if line_width > 7 * inch:  # 7 inches is a safe width for letter size
+                lines.append(' '.join(current_line[:-1]))
+                current_line = [word]
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        # Write text to PDF
+        y = 750  # Start from top of page
+        for line in lines:
+            if y < 50:  # If we're near the bottom of the page
+                c.showPage()  # Start a new page
+                y = 750
+                c.setFont("Helvetica", 12)
+            
+            c.drawString(50, y, line)
+            y -= 15  # Move down for next line
+        
+        # Save the PDF
+        c.save()
+        
+        # Get the PDF bytes
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        
+        return pdf_bytes
+        
+    except Exception as e:
+        logger.error(f"Error creating PDF from text: {str(e)}")
+        return None
 
 class MedicalInfoExtractor:
     def __init__(self, 
@@ -493,23 +554,26 @@ class MedicalInfoExtractor:
         
         return extracted_info
 
-    def save_to_database(self, extracted_info: Dict[str, Optional[str]]) -> str:
+    def save_to_database(self, extracted_info: Dict[str, Optional[str]], pdf_file: Optional[str] = None, text_input: Optional[str] = None) -> str:
         """
-        Save extracted information to database
+        Save extracted information to database with semantic field mapping
         
         :param extracted_info: Dictionary of extracted information
+        :param pdf_file: Path to the PDF file if available
+        :param text_input: Raw text input if available
         :return: Success/error message
         """
         try:
             with Session(engine) as session:
-                # Split patient name into first and last name
+                # Extract patient information
                 patient_name = extracted_info.get('patient_name', '').strip()
                 name_parts = patient_name.split()
                 first_name = name_parts[0] if name_parts else "Unknown"
                 last_name = name_parts[-1] if len(name_parts) > 1 else "Unknown"
                 middle_name = " ".join(name_parts[1:-1]) if len(name_parts) > 2 else None
 
-                # Convert date string to date object
+                # Map date fields based on PDF type
+                pdf_type = extracted_info.get('pdf_type', '').lower()
                 dob = None
                 if extracted_info.get('patient_dob'):
                     try:
@@ -517,7 +581,7 @@ class MedicalInfoExtractor:
                     except ValueError:
                         logger.warning(f"Invalid date format: {extracted_info['patient_dob']}")
 
-                # Create patient record
+                # Create patient record with mapped fields
                 patient = Patient(
                     first_name=first_name,
                     last_name=last_name,
@@ -535,43 +599,106 @@ class MedicalInfoExtractor:
                 session.commit()
                 session.refresh(patient)
 
-                # Create provider record if provider information is available
+                # Handle provider record
                 provider = None
                 if extracted_info.get('provider_name'):
-                    provider = Provider(
-                        name=extracted_info['provider_name'],
-                        address=extracted_info.get('provider_address'),
-                        phone=extracted_info.get('provider_phone'),
-                        created_at=datetime.now(timezone.utc),
-                        updated_at=datetime.now(timezone.utc)
-                    )
-                    session.add(provider)
-                    session.commit()
-                    session.refresh(provider)
+                    # Check if provider already exists
+                    existing_provider = session.exec(
+                        select(Provider).where(Provider.name == extracted_info['provider_name'])
+                    ).first()
+                    
+                    if existing_provider:
+                        # Use existing provider
+                        provider = existing_provider
+                        logger.info(f"Using existing provider: {provider.name}")
+                    else:
+                        # Create new provider
+                        provider = Provider(
+                            name=extracted_info['provider_name'],
+                            address=extracted_info.get('provider_address'),
+                            phone=extracted_info.get('provider_phone'),
+                            created_at=datetime.now(timezone.utc),
+                            updated_at=datetime.now(timezone.utc)
+                        )
+                        session.add(provider)
+                        session.commit()
+                        session.refresh(provider)
+                        logger.info(f"Created new provider: {provider.name}")
 
-                # Create authorization record if we have the required information
-                if provider and extracted_info.get('case_id') and extracted_info.get('service_type'):
-                    # Convert service type to enum
+                # Create authorization record with mapped fields
+                if provider and extracted_info.get('case_id'):
+                    # Map service type based on PDF type
                     service_type = ServiceType.OTHER  # Default to OTHER
-                    service_type_str = extracted_info['service_type'].lower().replace(' ', '_')
-                    try:
-                        service_type = ServiceType(service_type_str)
-                    except ValueError:
-                        logger.warning(f"Invalid service type: {extracted_info['service_type']}, defaulting to OTHER")
+                    service_type_str = extracted_info.get('service_type', '').lower()
+                    
+                    # Map service type strings to enum values
+                    service_type_mapping = {
+                        'physical therapy': ServiceType.PHYSICAL_THERAPY,
+                        'pt': ServiceType.PHYSICAL_THERAPY,
+                        'occupational therapy': ServiceType.OCCUPATIONAL_THERAPY,
+                        'ot': ServiceType.OCCUPATIONAL_THERAPY,
+                        'speech therapy': ServiceType.SPEECH_THERAPY,
+                        'st': ServiceType.SPEECH_THERAPY,
+                    }
+                    
+                    # Try to map the service type
+                    for key, value in service_type_mapping.items():
+                        if key in service_type_str:
+                            service_type = value
+                            break
 
-                    # Get injury date or use current date as fallback
+                    # Map initial evaluation date based on PDF type
                     initial_eval_date = None
-                    if extracted_info.get('injury_date'):
+                    if pdf_type == 'homelink':
+                        # For HomeLink, use start_date or authorization_date
+                        date_str = extracted_info.get('start_date') or extracted_info.get('authorization_date')
+                    elif pdf_type == 'corvel':
+                        # For Corvel, use effective_date
+                        date_str = extracted_info.get('effective_date')
+                    else:
+                        # For OneCall and others, use injury_date
+                        date_str = extracted_info.get('injury_date')
+
+                    if date_str:
                         try:
-                            initial_eval_date = datetime.strptime(extracted_info['injury_date'], '%m/%d/%Y').date()
+                            initial_eval_date = datetime.strptime(date_str, '%m/%d/%Y').date()
                         except ValueError:
-                            logger.warning(f"Invalid injury date format: {extracted_info['injury_date']}")
+                            logger.warning(f"Invalid date format: {date_str}")
+
                     if not initial_eval_date:
                         initial_eval_date = datetime.now(timezone.utc).date()
 
-                    # Get number of authorized visits
-                    num_visits = int(extracted_info.get('authorized_sessions', 1))
+                    # Map number of authorized visits based on PDF type
+                    num_visits = 1  # Default value
+                    if pdf_type == 'homelink':
+                        # For HomeLink, use authorized_sessions or total_visits
+                        num_visits = int(extracted_info.get('authorized_sessions') or 
+                                       extracted_info.get('total_visits') or 1)
+                    elif pdf_type == 'corvel':
+                        # For Corvel, use certified_visits or authorized_visits
+                        num_visits = int(extracted_info.get('certified_visits') or 
+                                       extracted_info.get('authorized_visits') or 1)
+                    else:
+                        # For OneCall and others, use authorized_sessions
+                        num_visits = int(extracted_info.get('authorized_sessions') or 1)
 
+                    # Handle authorization form file
+                    authorization_form = None
+                    if pdf_file:
+                        try:
+                            # Read the original PDF file as binary data
+                            with open(pdf_file, 'rb') as f:
+                                authorization_form = f.read()
+                            logger.info(f"Successfully read PDF file: {pdf_file}")
+                        except Exception as e:
+                            logger.error(f"Error reading PDF file: {str(e)}")
+                    elif text_input:
+                        # Convert text input to PDF
+                        authorization_form = create_pdf_from_text(text_input)
+                        if not authorization_form:
+                            logger.warning("Failed to create PDF from text input")
+
+                    # Create authorization record with mapped fields
                     authorization = Authorization(
                         patient_id=patient.patient_id,
                         provider_id=provider.provider_id,
@@ -581,6 +708,7 @@ class MedicalInfoExtractor:
                         initial_evaluation_date=initial_eval_date,
                         status=AuthorizationStatus.PENDING,
                         notes=f"Case ID: {extracted_info.get('case_id')}",
+                        authorization_form=authorization_form,
                         created_at=datetime.now(timezone.utc),
                         updated_at=datetime.now(timezone.utc)
                     )
@@ -602,14 +730,53 @@ def create_medical_extractor_app():
     """
     # Initialize extractor
     extractor = MedicalInfoExtractor()
+    
+    # Store extracted information and PDF file
+    extracted_data = {
+        'info': None,
+        'pdf_file': None,
+        'text_input': None
+    }
 
-    def extract_and_save_info(pdf_file, text_input, pdf_type, save_to_db):
+    def fetch_saved_record(authorization_id: int) -> str:
         """
-        Process input, extract information, and optionally save to database
+        Fetch the saved record from the database
+        
+        :param authorization_id: ID of the saved authorization record
+        :return: Formatted string containing the record details
+        """
+        try:
+            with Session(engine) as session:
+                # Query the authorization record with related patient and provider
+                query = select(Authorization).where(Authorization.authorization_id == authorization_id)
+                result = session.exec(query).first()
+                
+                if result:
+                    # Format the record details
+                    record_text = "Saved Record Details:\n\n"
+                    record_text += f"Authorization ID: {result.authorization_id}\n"
+                    record_text += f"Patient: {result.patient.first_name} {result.patient.last_name}\n"
+                    record_text += f"Provider: {result.provider.name}\n"
+                    record_text += f"Claim Number: {result.claim_number}\n"
+                    record_text += f"Service Type: {result.service_type.value}\n"
+                    record_text += f"Authorized Visits: {result.num_authorized_visits}\n"
+                    record_text += f"Initial Evaluation Date: {result.initial_evaluation_date}\n"
+                    record_text += f"Status: {result.status.value}\n"
+                    record_text += f"Created At: {result.created_at}\n"
+                    return record_text
+                else:
+                    return "Record not found."
+        except Exception as e:
+            logger.error(f"Error fetching saved record: {str(e)}")
+            return f"Error fetching saved record: {str(e)}"
+
+    def extract_info(pdf_file, text_input, pdf_type):
+        """
+        Extract information from input and store it
         """
         # Determine input source
         if pdf_file and text_input:
-            return "Please use either PDF upload OR text input, not both.", None, None
+            return "Please use either PDF upload OR text input, not both.", None, None, None
         
         try:
             # PDF file processing
@@ -619,29 +786,39 @@ def create_medical_extractor_app():
                 # Verify file exists and is a PDF
                 if not os.path.exists(pdf_file):
                     logger.error(f"File does not exist: {pdf_file}")
-                    return "File does not exist.", None, None
+                    return "File does not exist.", None, None, None
                 
                 if not pdf_file.lower().endswith('.pdf'):
                     logger.error(f"Not a PDF file: {pdf_file}")
-                    return "Please upload a valid PDF file.", None, None
+                    return "Please upload a valid PDF file.", None, None, None
                 
                 # Check if PDF type is selected
                 if not pdf_type:
                     logger.error("No PDF type selected")
-                    return "Please select a PDF type (OneCall, Corvel, or HomeLink).", None, None
+                    return "Please select a PDF type (OneCall, Corvel, or HomeLink).", None, None, None
                 
                 # Extract information from PDF
                 extracted_info = extractor.extract_key_information(pdf_file, is_pdf=True, pdf_type=pdf_type)
                 input_source = pdf_file
+                
+                # Store the extracted data
+                extracted_data['info'] = extracted_info
+                extracted_data['pdf_file'] = pdf_file
+                extracted_data['text_input'] = None
             
             # Text input processing
             elif text_input:
                 logger.debug("Text input received")
                 extracted_info = extractor.extract_key_information(text_input, is_pdf=False)
                 input_source = "Text Input"
+                
+                # Store the extracted data
+                extracted_data['info'] = extracted_info
+                extracted_data['pdf_file'] = None
+                extracted_data['text_input'] = text_input
             
             else:
-                return "Please upload a PDF or enter text.", None, None
+                return "Please upload a PDF or enter text.", None, None, None
             
             # Format results for display
             result_text = "Extracted Information:\n"
@@ -653,17 +830,50 @@ def create_medical_extractor_app():
             df.index.name = 'Key'
             df = df.reset_index()
             
-            # Save to database if requested
-            if save_to_db:
-                save_result = extractor.save_to_database(extracted_info)
-                result_text += f"\n\n{save_result}"
-            
             logger.info("Information extraction successful")
-            return result_text, df, input_source
+            return result_text, df, input_source, None
         
         except Exception as e:
             logger.error(f"Error processing input: {str(e)}")
-            return f"Error processing input: {str(e)}", None, None
+            return f"Error processing input: {str(e)}", None, None, None
+
+    def save_to_database():
+        """
+        Save the stored extracted information to database
+        """
+        if not extracted_data['info']:
+            return "No extracted information available. Please extract information first.", None, None, None
+        
+        try:
+            # Save to database using stored information
+            save_result = extractor.save_to_database(
+                extracted_data['info'],
+                extracted_data['pdf_file'],
+                extracted_data['text_input']
+            )
+            
+            # Format the result text
+            result_text = "Extracted Information:\n"
+            result_text += "\n".join([f"{key.replace('_', ' ').title()}: {value or 'Not Found'}" 
+                                       for key, value in extracted_data['info'].items()])
+            result_text += f"\n\n{save_result}"
+            
+            # Create DataFrame for tabular view
+            df = pd.DataFrame.from_dict(extracted_data['info'], orient='index', columns=['Value'])
+            df.index.name = 'Key'
+            df = df.reset_index()
+            
+            # Fetch and display the saved record
+            saved_record_text = None
+            if "Authorization ID:" in save_result:
+                auth_id = int(save_result.split("Authorization ID:")[1].strip())
+                saved_record_text = fetch_saved_record(auth_id)
+            
+            return result_text, df, extracted_data['pdf_file'], saved_record_text
+            
+        except Exception as e:
+            logger.error(f"Error saving to database: {str(e)}")
+            return f"Error saving to database: {str(e)}", None, None, None
 
     # Create Gradio interface
     with gr.Blocks(title="Medical Information Extractor") as demo:
@@ -685,10 +895,8 @@ def create_medical_extractor_app():
                     with gr.TabItem("Text Input"):
                         text_input = gr.Textbox(label="Paste Text", lines=10, placeholder="Paste your medical document text here...")
                 
-                # Extract and Save buttons
-                with gr.Row():
-                    extract_btn = gr.Button("Extract Information", variant="primary")
-                    save_btn = gr.Button("Save to Database", variant="secondary")
+                # Extract button
+                extract_btn = gr.Button("Extract Information", variant="primary")
                 
                 # Outputs
                 text_output = gr.Textbox(label="Extracted Text", lines=10)
@@ -698,6 +906,13 @@ def create_medical_extractor_app():
                 # PDF Preview (only visible for PDF uploads)
                 pdf_preview = PDF(label="PDF Preview", interactive=True)
 
+        # Save button in a new row to span full width
+        with gr.Row():
+            save_btn = gr.Button("Save to Database", variant="secondary", scale=1)
+
+        # Saved record display
+        saved_record_output = gr.Textbox(label="Saved Record", lines=10, visible=True)
+
         # Event handlers
         pdf_input.upload(
             fn=lambda file: file, 
@@ -706,15 +921,15 @@ def create_medical_extractor_app():
         )
         
         extract_btn.click(
-            fn=lambda pdf, text, type: extract_and_save_info(pdf, text, type, False),
+            fn=extract_info,
             inputs=[pdf_input, text_input, pdf_type], 
-            outputs=[text_output, df_output, pdf_preview]
+            outputs=[text_output, df_output, pdf_preview, saved_record_output]
         )
         
         save_btn.click(
-            fn=lambda pdf, text, type: extract_and_save_info(pdf, text, type, True),
-            inputs=[pdf_input, text_input, pdf_type], 
-            outputs=[text_output, df_output, pdf_preview]
+            fn=save_to_database,
+            inputs=None,
+            outputs=[text_output, df_output, pdf_preview, saved_record_output]
         )
         
         # Explanatory text

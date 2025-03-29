@@ -625,6 +625,7 @@ class Authorization(SQLModel, table=True):
     initial_evaluation_date: date
     status: AuthorizationStatus = Field(default=AuthorizationStatus.PENDING)
     notes: Optional[str] = Field(default=None, max_length=1000)
+    authorization_form: Optional[bytes] = Field(default=None)  # Store PDF as binary data
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
