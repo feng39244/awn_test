@@ -592,25 +592,44 @@ class MedicalInfoExtractor:
                     except ValueError:
                         logger.warning(f"Invalid date format: {extracted_info['patient_dob']}")
 
-                # Create patient record with mapped fields
-                patient = Patient(
-                    first_name=first_name,
-                    last_name=last_name,
-                    middle_name=middle_name,
-                    date_of_birth=dob,
-                    gender=Gender.OTHER,  # Default to OTHER since we don't extract gender
-                    address=extracted_info.get('patient_address'),
-                    phone=extracted_info.get('patient_phone'),
-                    client_number=extracted_info.get('case_id'),  # Using case_id as client number
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc)
-                )
+                # Check if patient already exists
+                existing_patient = session.exec(
+                    select(Patient).where(
+                        Patient.first_name == first_name,
+                        Patient.last_name == last_name
+                    )
+                ).first()
 
-                logger.info("Attempting to add patient to database...")
-                session.add(patient)
+                if existing_patient:
+                    # Update existing patient
+                    logger.info(f"Updating existing patient: {first_name} {last_name} (ID: {existing_patient.patient_id})")
+                    existing_patient.middle_name = middle_name
+                    existing_patient.date_of_birth = dob
+                    existing_patient.address = extracted_info.get('patient_address')
+                    existing_patient.phone = extracted_info.get('patient_phone')
+                    existing_patient.client_number = extracted_info.get('case_id')
+                    existing_patient.updated_at = datetime.now(timezone.utc)
+                    patient = existing_patient
+                else:
+                    # Create new patient record
+                    patient = Patient(
+                        first_name=first_name,
+                        last_name=last_name,
+                        middle_name=middle_name,
+                        date_of_birth=dob,
+                        gender=Gender.OTHER,  # Default to OTHER since we don't extract gender
+                        address=extracted_info.get('patient_address'),
+                        phone=extracted_info.get('patient_phone'),
+                        client_number=extracted_info.get('case_id'),  # Using case_id as client number
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc)
+                    )
+                    logger.info("Attempting to add new patient to database...")
+                    session.add(patient)
+                
                 session.commit()
                 session.refresh(patient)
-                logger.info(f"Successfully created patient record with ID: {patient.patient_id}")
+                logger.info(f"Successfully saved patient record with ID: {patient.patient_id}")
 
                 # Handle provider record
                 provider = None
@@ -709,9 +728,27 @@ class MedicalInfoExtractor:
                                        extracted_info.get('authorized_visits') or 1)
                     else:
                         # For OneCall and others, use authorized_sessions
-                        num_visits = int(extracted_info.get('authorized_sessions') or 1)
+                        auth_sessions = extracted_info.get('authorized_sessions')
+                        logger.info(f"Processing authorized_sessions value: {auth_sessions}")
+                        if auth_sessions:
+                            try:
+                                # Convert to string first to handle both string and integer inputs
+                                auth_sessions_str = str(auth_sessions).strip()
+                                num_visits = int(auth_sessions_str)
+                                logger.info(f"Successfully converted authorized_sessions to integer: {num_visits}")
+                            except ValueError as e:
+                                logger.warning(f"Error converting authorized_sessions to integer: {e}")
+                                logger.warning(f"Using default value: 1")
+                                num_visits = 1
+                        else:
+                            logger.warning("No authorized_sessions value found, using default: 1")
+                            num_visits = 1
                     
-                    logger.info(f"Number of authorized visits: {num_visits}")
+                    logger.info(f"Final number of authorized visits: {num_visits}")
+                    logger.info(f"Raw authorized_sessions value: {extracted_info.get('authorized_sessions')}")
+                    logger.info(f"Raw authorized_visits value: {extracted_info.get('authorized_visits')}")
+                    logger.info(f"Raw certified_visits value: {extracted_info.get('certified_visits')}")
+                    logger.info(f"Raw total_visits value: {extracted_info.get('total_visits')}")
 
                     # Handle authorization form file
                     authorization_form = None
@@ -784,7 +821,11 @@ def create_medical_extractor_app():
         Update the stored extracted information with edited values
         
         :param df: Edited DataFrame containing the extracted information
+        :return: Updated DataFrame
         """
+        logger.info("update_extracted_data function called")
+        logger.info(f"Received DataFrame: {df}")
+        
         if df is not None and not df.empty:
             try:
                 # Convert DataFrame back to dictionary
@@ -800,16 +841,24 @@ def create_medical_extractor_app():
                 # Update the stored information
                 extracted_data['info'] = edited_info
                 logger.info("Updated extracted information with edited values")
-                logger.debug(f"Updated info: {edited_info}")
+                logger.info(f"Updated info: {edited_info}")
+                
+                # Log the current state of extracted_data
+                logger.info(f"Current extracted_data state: {extracted_data['info']}")
+                
+                # Return the updated DataFrame
+                return df
             except Exception as e:
                 logger.error(f"Error updating extracted data: {str(e)}")
+                return df
+        return df
 
-    def fetch_saved_record(authorization_id: int) -> str:
+    def fetch_saved_record(authorization_id: int) -> pd.DataFrame:
         """
-        Fetch the saved record from the database and display it in a table format
+        Fetch the saved record from the database and return it as a DataFrame
         
         :param authorization_id: ID of the saved authorization record
-        :return: Formatted string containing the record details in a table format
+        :return: DataFrame containing the record details
         """
         try:
             with Session(engine) as session:
@@ -818,58 +867,47 @@ def create_medical_extractor_app():
                 result = session.exec(query).first()
                 
                 if result:
-                    # Create a list of tuples for the table
+                    # Create a list of dictionaries for the DataFrame
                     table_data = [
                         # Patient Information
-                        ("patient_name", f"{result.patient.first_name} {result.patient.last_name}", "patients", "first_name, last_name"),
-                        ("patient_dob", result.patient.date_of_birth, "patients", "date_of_birth"),
-                        ("patient_address", result.patient.address, "patients", "address"),
-                        ("patient_phone", result.patient.phone, "patients", "phone"),
-                        ("case_id", result.patient.client_number, "patients", "client_number"),
+                        {"PDF/Text Key": "patient_name", "Extracted Value": extracted_data['info'].get('patient_name', ''), "Database Table": "patients", "Database Field": "first_name, last_name", "Table Value": f"{result.patient.first_name} {result.patient.last_name}"},
+                        {"PDF/Text Key": "patient_dob", "Extracted Value": extracted_data['info'].get('patient_dob', ''), "Database Table": "patients", "Database Field": "date_of_birth", "Table Value": result.patient.date_of_birth},
+                        {"PDF/Text Key": "patient_address", "Extracted Value": extracted_data['info'].get('patient_address', ''), "Database Table": "patients", "Database Field": "address", "Table Value": result.patient.address},
+                        {"PDF/Text Key": "patient_phone", "Extracted Value": extracted_data['info'].get('patient_phone', ''), "Database Table": "patients", "Database Field": "phone", "Table Value": result.patient.phone},
+                        {"PDF/Text Key": "case_id", "Extracted Value": extracted_data['info'].get('case_id', ''), "Database Table": "patients", "Database Field": "client_number", "Table Value": result.patient.client_number},
                         
                         # Provider Information
-                        ("provider_name", result.provider.name, "providers", "name"),
-                        ("provider_address", result.provider.address, "providers", "address"),
-                        ("provider_phone", result.provider.phone, "providers", "phone"),
+                        {"PDF/Text Key": "provider_name", "Extracted Value": extracted_data['info'].get('provider_name', ''), "Database Table": "providers", "Database Field": "name", "Table Value": result.provider.name},
+                        {"PDF/Text Key": "provider_address", "Extracted Value": extracted_data['info'].get('provider_address', ''), "Database Table": "providers", "Database Field": "address", "Table Value": result.provider.address},
+                        {"PDF/Text Key": "provider_phone", "Extracted Value": extracted_data['info'].get('provider_phone', ''), "Database Table": "providers", "Database Field": "phone", "Table Value": result.provider.phone},
                         
                         # Authorization Information
-                        ("", result.authorization_id, "authorizations", "authorization_id"),
-                        ("claim_number", result.claim_number, "authorizations", "claim_number"),
-                        ("authorized_sessions", result.num_authorized_visits, "authorizations", "num_authorized_visits"),
-                        ("service_type", result.service_type.value, "authorizations", "service_type"),
-                        ("injury_date", result.initial_evaluation_date, "authorizations", "initial_evaluation_date"),
-                        ("", result.status.value, "authorizations", "status"),
-                        ("", result.created_at, "authorizations", "created_at"),
-                        ("", result.updated_at, "authorizations", "updated_at"),
-                        ("notes", result.notes, "authorizations", "notes")
+                        {"PDF/Text Key": "", "Extracted Value": "", "Database Table": "authorizations", "Database Field": "authorization_id", "Table Value": result.authorization_id},
+                        {"PDF/Text Key": "claim_number", "Extracted Value": extracted_data['info'].get('claim_number', ''), "Database Table": "authorizations", "Database Field": "claim_number", "Table Value": result.claim_number},
+                        {"PDF/Text Key": "authorized_sessions", "Extracted Value": extracted_data['info'].get('authorized_sessions', ''), "Database Table": "authorizations", "Database Field": "num_authorized_visits", "Table Value": result.num_authorized_visits},
+                        {"PDF/Text Key": "service_type", "Extracted Value": extracted_data['info'].get('service_type', ''), "Database Table": "authorizations", "Database Field": "service_type", "Table Value": result.service_type.value},
+                        {"PDF/Text Key": "injury_date", "Extracted Value": extracted_data['info'].get('injury_date', ''), "Database Table": "authorizations", "Database Field": "initial_evaluation_date", "Table Value": result.initial_evaluation_date},
+                        {"PDF/Text Key": "", "Extracted Value": "", "Database Table": "authorizations", "Database Field": "status", "Table Value": result.status.value},
+                        {"PDF/Text Key": "", "Extracted Value": "", "Database Table": "authorizations", "Database Field": "created_at", "Table Value": result.created_at},
+                        {"PDF/Text Key": "", "Extracted Value": "", "Database Table": "authorizations", "Database Field": "updated_at", "Table Value": result.updated_at},
+                        {"PDF/Text Key": "notes", "Extracted Value": extracted_data['info'].get('notes', ''), "Database Table": "authorizations", "Database Field": "notes", "Table Value": result.notes}
                     ]
                     
-                    # Format the table
-                    table_text = "Saved Record Details:\n\n"
-                    table_text += "PDF/Text Key | Extracted Value | Database Table | Database Field |\n"
-                    table_text += "-" * 80 + "\n"
+                    # Create DataFrame
+                    df = pd.DataFrame(table_data)
                     
-                    for key, value, table, field in table_data:
-                        # Format the value
-                        if value is None:
-                            value_str = "NULL"
-                        elif isinstance(value, datetime):
-                            value_str = value.strftime("%Y-%m-%d %H:%M:%S")
-                        elif isinstance(value, date):
-                            value_str = value.strftime("%Y-%m-%d")
-                        else:
-                            value_str = str(value)
-                        
-                        # Format the row
-                        row = f"{key:12} | {value_str:15} | {table:13} | {field:14} |\n"
-                        table_text += row
+                    # Format datetime and date columns
+                    for col in ['Table Value']:
+                        if df[col].dtype == 'object':
+                            df[col] = df[col].apply(lambda x: x.strftime("%Y-%m-%d %H:%M:%S") if isinstance(x, datetime) else x)
+                            df[col] = df[col].apply(lambda x: x.strftime("%Y-%m-%d") if isinstance(x, date) else x)
                     
-                    return table_text
+                    return df
                 else:
-                    return "Record not found."
+                    return pd.DataFrame(columns=["PDF/Text Key", "Extracted Value", "Database Table", "Database Field"])
         except Exception as e:
             logger.error(f"Error fetching saved record: {str(e)}")
-            return f"Error fetching saved record: {str(e)}"
+            return pd.DataFrame(columns=["PDF/Text Key", "Extracted Value", "Database Table", "Database Field"])
 
     def extract_info(pdf_file, text_input, pdf_type):
         """
@@ -938,54 +976,62 @@ def create_medical_extractor_app():
             logger.error(f"Error processing input: {str(e)}")
             return f"Error processing input: {str(e)}", None, None, None
 
-    def save_to_database():
+    def save_to_database(df_output):
         """
-        Save the stored extracted information to database
+        Save the extracted information to database
+        
+        :param df_output: DataFrame containing the extracted information
+        :return: DataFrame containing the saved record details
         """
-        if not extracted_data['info']:
-            return "No extracted information available. Please extract information first.", None, None, None
+        if df_output is None or df_output.empty:
+            return pd.DataFrame(columns=["PDF/Text Key", "Extracted Value", "Database Table", "Database Field"])
         
         try:
+            # Convert DataFrame back to dictionary
+            edited_info = {}
+            for _, row in df_output.iterrows():
+                key = row['Key']
+                value = row['Value']
+                # Handle empty strings and None values
+                if pd.isna(value) or value == '':
+                    value = None
+                edited_info[key] = value
+            
+            # Log the edited values before saving
+            logger.info("Edited values from DataFrame:")
+            logger.info(f"authorized_sessions: {edited_info.get('authorized_sessions')}")
+            logger.info(f"Full edited info: {edited_info}")
+            
+            # Update the stored information with edited values
+            extracted_data['info'] = edited_info
+            
             # Log the information being saved
             logger.info("Saving information to database:")
-            logger.info(f"Current extracted data: {extracted_data['info']}")
+            logger.info(f"Current extracted data: {edited_info}")
             
-            # Save to database using stored information
+            # Save to database using edited information
             save_result = extractor.save_to_database(
-                extracted_data['info'],  # Use the updated info from edited DataFrame
+                edited_info,  # Use the edited info from DataFrame
                 extracted_data['pdf_file'],
                 extracted_data['text_input']
             )
             
-            # Format the result text using the updated information
-            result_text = "Extracted Information (After Editing):\n"
-            result_text += "\n".join([f"{key.replace('_', ' ').title()}: {value or 'Not Found'}" 
-                                       for key, value in extracted_data['info'].items()])
-            result_text += f"\n\n{save_result}"
-            
-            # Create DataFrame for tabular view using the updated information
-            df = pd.DataFrame.from_dict(extracted_data['info'], orient='index', columns=['Value'])
-            df.index.name = 'Key'
-            df = df.reset_index()
-            
             # Fetch and display the saved record
-            saved_record_text = None
             if "Authorization ID:" in save_result:
                 try:
                     auth_id = int(save_result.split("Authorization ID:")[1].strip())
-                    saved_record_text = fetch_saved_record(auth_id)
+                    saved_record_df = fetch_saved_record(auth_id)
                     logger.info(f"Fetched saved record for Authorization ID: {auth_id}")
+                    return saved_record_df
                 except Exception as e:
                     logger.error(f"Error fetching saved record: {str(e)}")
-                    saved_record_text = "Error fetching saved record details."
+                    return pd.DataFrame(columns=["PDF/Text Key", "Extracted Value", "Database Table", "Database Field"])
             else:
-                saved_record_text = "No authorization record was created."
-            
-            return result_text, df, extracted_data['pdf_file'], saved_record_text
+                return pd.DataFrame(columns=["PDF/Text Key", "Extracted Value", "Database Table", "Database Field"])
             
         except Exception as e:
             logger.error(f"Error saving to database: {str(e)}")
-            return f"Error saving to database: {str(e)}", None, None, None
+            return pd.DataFrame(columns=["PDF/Text Key", "Extracted Value", "Database Table", "Database Field"])
 
     # Create Gradio interface
     with gr.Blocks(title="Medical Information Extractor") as demo:
@@ -1022,8 +1068,8 @@ def create_medical_extractor_app():
         with gr.Row():
             save_btn = gr.Button("Save to Database", variant="secondary", scale=1)
 
-        # Saved record display
-        saved_record_output = gr.Textbox(label="Saved Record", lines=10, visible=True)
+        # Saved record display as DataFrame
+        saved_record_output = gr.DataFrame(label="Saved Record Details", interactive=False)
 
         # Event handlers
         pdf_input.upload(
@@ -1042,13 +1088,18 @@ def create_medical_extractor_app():
         df_output.change(
             fn=update_extracted_data,
             inputs=df_output,
-            outputs=None
+            outputs=df_output,  # Add df_output as output to ensure changes are reflected
+            show_progress=True  # Add progress indicator
         )
         
+        # Add debug logging for DataFrame changes
+        logger.info("Setting up DataFrame change event handler")
+        
+        # Update save_btn.click to include df_output as input
         save_btn.click(
             fn=save_to_database,
-            inputs=None,
-            outputs=[text_output, df_output, pdf_preview, saved_record_output]
+            inputs=df_output,  # Add df_output as input
+            outputs=[saved_record_output]  # Only update the saved record details
         )
         
         # Explanatory text
