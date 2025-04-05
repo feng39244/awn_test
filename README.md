@@ -189,8 +189,14 @@ For production deployment, make sure to:
 5. Consider using a more robust PostgreSQL setup with backups
 
 ## Local testing
+conda activate awn_test
+cd ~/repos/awn_test
 uvicorn main:app --reload
+# or you can run below
+python medical_pdf_extractor_ui.py
 
 ## Cloud testing
+ssh root@159.xxx.xxx.xxx
 source ~/repos/awn_test/venv/bin/activate
+cd /root/repos/awn_test
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload

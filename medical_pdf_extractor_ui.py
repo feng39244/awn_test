@@ -816,42 +816,49 @@ def create_medical_extractor_app():
         'text_input': None
     }
 
-    def update_extracted_data(df):
+    def update_extracted_data(text):
         """
         Update the stored extracted information with edited values
         
-        :param df: Edited DataFrame containing the extracted information
-        :return: Updated DataFrame
+        :param text: Text containing the extracted information
+        :return: Updated text
         """
         logger.info("update_extracted_data function called")
-        logger.info(f"Received DataFrame: {df}")
+        logger.info(f"Received text: {text}")
         
-        if df is not None and not df.empty:
+        if text:
             try:
-                # Convert DataFrame back to dictionary
+                # Parse the text into a dictionary
                 edited_info = {}
-                for _, row in df.iterrows():
-                    key = row['Key']
-                    value = row['Value']
-                    # Handle empty strings and None values
-                    if pd.isna(value) or value == '':
-                        value = None
-                    edited_info[key] = value
+                lines = text.split('\n')
+                
+                # Skip the header line and process each data line
+                for line in lines[1:]:  # Skip the header line
+                    if line.strip():  # Skip empty lines
+                        # Split the line into parts, handling the Key and Value columns
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            # The key is the second part (after the index), value is the rest
+                            key = parts[1].strip()
+                            value = ' '.join(parts[2:]).strip()
+                            
+                            # Handle empty values
+                            if value.lower() == 'none' or not value:
+                                value = None
+                            
+                            edited_info[key] = value
                 
                 # Update the stored information
                 extracted_data['info'] = edited_info
                 logger.info("Updated extracted information with edited values")
                 logger.info(f"Updated info: {edited_info}")
                 
-                # Log the current state of extracted_data
-                logger.info(f"Current extracted_data state: {extracted_data['info']}")
-                
-                # Return the updated DataFrame
-                return df
+                # Return the updated text
+                return text
             except Exception as e:
                 logger.error(f"Error updating extracted data: {str(e)}")
-                return df
-        return df
+                return text
+        return text
 
     def fetch_saved_record(authorization_id: int) -> pd.DataFrame:
         """
@@ -976,29 +983,39 @@ def create_medical_extractor_app():
             logger.error(f"Error processing input: {str(e)}")
             return f"Error processing input: {str(e)}", None, None, None
 
-    def save_to_database(df_output):
+    def save_to_database(text):
         """
         Save the extracted information to database
         
-        :param df_output: DataFrame containing the extracted information
+        :param text: Text containing the extracted information
         :return: DataFrame containing the saved record details
         """
-        if df_output is None or df_output.empty:
+        if not text:
             return pd.DataFrame(columns=["PDF/Text Key", "Extracted Value", "Database Table", "Database Field"])
         
         try:
-            # Convert DataFrame back to dictionary
+            # Parse the text into a dictionary
             edited_info = {}
-            for _, row in df_output.iterrows():
-                key = row['Key']
-                value = row['Value']
-                # Handle empty strings and None values
-                if pd.isna(value) or value == '':
-                    value = None
-                edited_info[key] = value
+            lines = text.split('\n')
+            
+            # Skip the header line and process each data line
+            for line in lines[1:]:  # Skip the header line
+                if line.strip():  # Skip empty lines
+                    # Split the line into parts, handling the Key and Value columns
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        # The key is the second part (after the index), value is the rest
+                        key = parts[1].strip()
+                        value = ' '.join(parts[2:]).strip()
+                        
+                        # Handle empty values
+                        if value.lower() == 'none' or not value:
+                            value = None
+                        
+                        edited_info[key] = value
             
             # Log the edited values before saving
-            logger.info("Edited values from DataFrame:")
+            logger.info("Edited values from text:")
             logger.info(f"authorized_sessions: {edited_info.get('authorized_sessions')}")
             logger.info(f"Full edited info: {edited_info}")
             
@@ -1011,7 +1028,7 @@ def create_medical_extractor_app():
             
             # Save to database using edited information
             save_result = extractor.save_to_database(
-                edited_info,  # Use the edited info from DataFrame
+                edited_info,  # Use the edited info from text
                 extracted_data['pdf_file'],
                 extracted_data['text_input']
             )
@@ -1058,7 +1075,7 @@ def create_medical_extractor_app():
                 
                 # Outputs
                 text_output = gr.Textbox(label="Extracted Text", lines=10)
-                df_output = gr.DataFrame(label="Extracted Information", interactive=True)  # Made interactive
+                df_output = gr.Textbox(label="Extracted Information", lines=20, interactive=True)   # Made interactive
             
             with gr.Column(scale=1):
                 # PDF Preview (only visible for PDF uploads)
