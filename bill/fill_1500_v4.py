@@ -3,6 +3,9 @@ from pdfrw import PdfReader, PdfWriter, PdfName, PdfString, IndirectPdfDict, Pdf
 
 # Define input and output file paths
 input_pdf_path = "form-cms1500.pdf"  # Half-filled form
+#input_pdf_path = "CMS1500-0212-MDCW.pdf"
+#input_pdf_path = "massage_filled.pdf"
+
 output_pdf_path = "Filled_CMS_1500.pdf"  # Output fully filled form
 
 # Load the PDF form
